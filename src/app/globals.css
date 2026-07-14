@@ -24,3 +24,39 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes lazarus-breathe {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.035);
+  }
+}
+
+@keyframes lazarus-pulse {
+  0% {
+    stroke-dashoffset: 220;
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lazarus-breathe {
+    animation: lazarus-breathe 6s ease-in-out infinite;
+  }
+
+  .lazarus-line-pulse {
+    stroke-dasharray: 120 100;
+    animation: lazarus-pulse 5s linear infinite;
+  }
+}
