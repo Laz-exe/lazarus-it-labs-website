@@ -6,25 +6,25 @@ const pillars = [
     title: "Security",
     description: "Protected by design.",
     Icon: ShieldCheck,
-    position: "left-1/2 top-[2%] -translate-x-1/2 text-center items-center",
-    line: "M300 300 L300 92",
-    dot: { cx: 300, cy: 185 },
+    position: "left-1/2 top-[8%] -translate-x-1/2 text-center",
+    line: "M300 300 L300 125",
+    dot: { cx: 300, cy: 165 },
   },
   {
     title: "Performance",
     description: "Faster. Longer. Better.",
     Icon: Gauge,
-    position: "left-[4%] bottom-[10%] text-center items-center",
-    line: "M300 300 L112 370",
-    dot: { cx: 165, cy: 350 },
+    position: "left-[15%] top-1/2 -translate-y-1/2 text-center",
+    line: "M300 300 L150 300",
+    dot: { cx: 190, cy: 300 },
   },
   {
     title: "Connectivity",
     description: "Everything working together.",
     Icon: Network,
-    position: "right-[2%] bottom-[10%] text-center items-center",
-    line: "M300 300 L500 370",
-    dot: { cx: 435, cy: 350 },
+    position: "right-[15%] top-1/2 -translate-y-1/2 text-center",
+    line: "M300 300 L450 300",
+    dot: { cx: 410, cy: 300 },
   },
 ];
 
@@ -83,8 +83,6 @@ export default function Hero() {
         </div>
 
         <div className="relative mx-auto aspect-square w-full max-w-[680px]">
-          <div className="absolute inset-0 rounded-[2.5rem] bg-transparent" />
-
           <svg
             className="absolute inset-0 h-full w-full"
             viewBox="0 0 600 600"
@@ -92,8 +90,8 @@ export default function Hero() {
           >
             <defs>
               <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.45" />
-                <stop offset="42%" stopColor="#D4AF37" stopOpacity="0.12" />
+                <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.6" />
+                <stop offset="42%" stopColor="#D4AF37" stopOpacity="0.14" />
                 <stop offset="100%" stopColor="#000000" stopOpacity="0" />
               </radialGradient>
 
@@ -112,7 +110,7 @@ export default function Hero() {
               </filter>
             </defs>
 
-            <circle cx="300" cy="300" r="235" fill="url(#coreGlow)" />
+            <circle cx="300" cy="300" r="245" fill="url(#coreGlow)" />
 
             {pillars.map((pillar) => (
               <path
@@ -120,7 +118,7 @@ export default function Hero() {
                 d={pillar.line}
                 stroke="url(#lineGradient)"
                 strokeWidth="2"
-                strokeDasharray="2 6"
+                strokeDasharray="2 7"
                 filter="url(#softGlow)"
                 fill="none"
               />
@@ -131,44 +129,45 @@ export default function Hero() {
                 key={`${pillar.title}-dot`}
                 cx={pillar.dot.cx}
                 cy={pillar.dot.cy}
-                r="6"
+                r="4"
                 fill="#D4AF37"
                 filter="url(#softGlow)"
               />
             ))}
           </svg>
 
-          <div className="absolute left-1/2 top-1/2 z-20 flex h-64 w-64 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 p-8 shadow-2xl shadow-purple-500/30 backdrop-blur-xl">
-            <div className="absolute inset-0 rounded-full bg-purple-500/15 blur-3xl lazarus-breathe" />
+          <div className="absolute left-1/2 top-1/2 z-20 flex h-[360px] w-[360px] -translate-x-1/2 -translate-y-1/2 items-center justify-center">
+            <div className="absolute inset-0 rounded-full bg-purple-500/25 blur-[70px] lazarus-breathe" />
+            <div className="absolute inset-6 rounded-full border border-[#D4AF37]/15 bg-black/10 backdrop-blur-md shadow-[0_0_80px_rgba(139,92,246,.18)]" />
+            <div className="absolute inset-10 rounded-full border border-[#8B5CF6]/50" />
+            <div className="absolute inset-12 rounded-full bg-gradient-to-br from-purple-500/10 via-transparent to-[#D4AF37]/10" />
+
             <Image
-              src="/logo-primary.png"
-              alt="Lazarus I.T. Labs"
-              width={320}
-              height={230}
+              src="/logo-emblem.png"
+              alt="Lazarus I.T. Labs emblem"
+              width={410}
+              height={410}
               priority
-              className="relative h-auto w-full"
+              className="relative h-auto w-full drop-shadow-[0_0_30px_rgba(255,255,255,.18)]"
             />
           </div>
 
           {pillars.map(({ title, description, Icon, position }) => (
             <div
               key={title}
-              className={`absolute z-30 flex max-w-56 flex-col gap-3 ${position}`}
+              className={`group absolute z-30 max-w-52 ${position}`}
             >
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-[#D4AF37]/30 bg-white/[0.06] text-[#D4AF37] shadow-lg shadow-black/30 backdrop-blur-xl">
-                <Icon className="h-9 w-9" strokeWidth={1.7} />
+              <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full border border-[#D4AF37]/30 bg-white/[0.055] text-[#D4AF37] shadow-lg shadow-black/30 backdrop-blur-xl transition duration-300 group-hover:scale-110 group-hover:border-[#D4AF37]/60 group-hover:bg-[#D4AF37]/10">
+                <Icon className="h-7 w-7" strokeWidth={1.7} />
               </div>
 
-              <div>
-                <h3 className="text-2xl font-semibold text-white">{title}</h3>
-                <p className="mt-2 text-base leading-6 text-slate-400">
-                  {description}
-                </p>
-              </div>
+              <h3 className="text-lg font-semibold text-white">{title}</h3>
+
+              <p className="mt-2 text-sm leading-5 text-slate-400 opacity-0 transition duration-300 group-hover:opacity-100">
+                {description}
+              </p>
             </div>
           ))}
-
-          <div className="absolute bottom-8 left-1/2 h-24 w-96 -translate-x-1/2 rounded-full bg-gradient-to-r from-purple-600/20 via-[#D4AF37]/25 to-blue-600/15 blur-2xl" />
         </div>
       </div>
     </section>
