@@ -1,41 +1,48 @@
+"use client";
+
 import Image from "next/image";
 import { Gauge, Network, ShieldCheck } from "lucide-react";
 
 const pillars = [
   {
-    title: "Security",
-    description: "Protected by design.",
-    Icon: ShieldCheck,
-    position: "left-1/2 top-[8%] -translate-x-1/2 text-center",
-    line: "M300 300 L300 125",
-    dot: { cx: 300, cy: 165 },
-  },
-  {
     title: "Performance",
     description: "Faster. Longer. Better.",
     Icon: Gauge,
-    position: "left-[15%] top-1/2 -translate-y-1/2 text-center",
-    line: "M300 300 L150 300",
-    dot: { cx: 190, cy: 300 },
+    x: 16.6,
+    y: 50.3,
+  },
+  {
+    title: "Security",
+    description: "Protected by design.",
+    Icon: ShieldCheck,
+    x: 50.3,
+    y: 21.4,
   },
   {
     title: "Connectivity",
     description: "Everything working together.",
     Icon: Network,
-    position: "right-[15%] top-1/2 -translate-y-1/2 text-center",
-    line: "M300 300 L450 300",
-    dot: { cx: 410, cy: 300 },
+    x: 82,
+    y: 50.4,
   },
 ];
 
 export default function Hero() {
   return (
     <section className="relative flex min-h-screen items-center overflow-hidden px-6 pt-64">
+
+      {/* Background Lighting */}
+
       <div className="absolute right-[-10%] top-[-10%] h-[600px] w-[600px] rounded-full bg-purple-600/20 blur-[150px]" />
+
       <div className="absolute bottom-[-15%] left-[-10%] h-[500px] w-[500px] rounded-full bg-[#D4AF37]/10 blur-[140px]" />
 
       <div className="relative mx-auto grid max-w-7xl items-center gap-16 md:grid-cols-2">
+
+        {/* LEFT SIDE */}
+
         <div>
+
           <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#D4AF37]">
             Lazarus I.T. Labs LLC
           </p>
@@ -54,6 +61,7 @@ export default function Hero() {
           </p>
 
           <div className="mt-9 flex flex-wrap gap-5">
+
             <a
               href="#contact"
               className="rounded-2xl bg-[#D4AF37] px-8 py-4 text-lg font-semibold text-black transition hover:scale-105 hover:shadow-lg hover:shadow-[#D4AF37]/30"
@@ -67,23 +75,31 @@ export default function Hero() {
             >
               Explore Services
             </a>
+
           </div>
 
           <div className="mt-12 grid max-w-xl gap-4 text-sm text-slate-300 sm:grid-cols-3">
+
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
               Honest Advice
             </div>
+
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
               Practical Solutions
             </div>
+
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
               Modern Expertise
             </div>
+
           </div>
+
         </div>
 
+        {/* RIGHT SIDE */}
+
         <div className="relative mx-auto aspect-square w-full max-w-[680px]">
-          <svg
+                  <svg
             className="absolute inset-0 h-full w-full"
             viewBox="0 0 600 600"
             aria-hidden="true"
@@ -113,22 +129,25 @@ export default function Hero() {
             <circle cx="300" cy="300" r="245" fill="url(#coreGlow)" />
 
             {pillars.map((pillar) => (
-              <path
-                key={pillar.title}
-                d={pillar.line}
+              <line
+                key={`${pillar.title}-line`}
+                x1="300"
+                y1="300"
+                x2={pillar.x * 6}
+                y2={pillar.y * 6}
                 stroke="url(#lineGradient)"
                 strokeWidth="2"
                 strokeDasharray="2 7"
                 filter="url(#softGlow)"
-                fill="none"
+                className="lazarus-line-pulse"
               />
             ))}
 
             {pillars.map((pillar) => (
               <circle
                 key={`${pillar.title}-dot`}
-                cx={pillar.dot.cx}
-                cy={pillar.dot.cy}
+                cx={(300 + pillar.x * 6) / 2}
+                cy={(300 + pillar.y * 6) / 2}
                 r="4"
                 fill="#D4AF37"
                 filter="url(#softGlow)"
@@ -151,23 +170,29 @@ export default function Hero() {
               className="relative h-auto w-full drop-shadow-[0_0_30px_rgba(255,255,255,.18)]"
             />
           </div>
-
-          {pillars.map(({ title, description, Icon, position }) => (
+                    {pillars.map(({ title, description, Icon, x, y }) => (
             <div
               key={title}
-              className={`group absolute z-30 max-w-52 ${position}`}
+              className="group absolute z-30 -translate-x-1/2 -translate-y-1/2 text-center"
+              style={{
+                left: `${x}%`,
+                top: `${y}%`,
+              }}
             >
-              <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full border border-[#D4AF37]/30 bg-white/[0.055] text-[#D4AF37] shadow-lg shadow-black/30 backdrop-blur-xl transition duration-300 group-hover:scale-110 group-hover:border-[#D4AF37]/60 group-hover:bg-[#D4AF37]/10">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-[#D4AF37]/30 bg-white/[0.055] text-[#D4AF37] shadow-lg shadow-black/30 backdrop-blur-xl transition duration-300 group-hover:scale-110 group-hover:border-[#D4AF37]/60 group-hover:bg-[#D4AF37]/10">
                 <Icon className="h-7 w-7" strokeWidth={1.7} />
               </div>
 
-              <h3 className="text-lg font-semibold text-white">{title}</h3>
+              <h3 className="text-lg font-semibold text-white">
+                {title}
+              </h3>
 
-              <p className="mt-2 text-sm leading-5 text-slate-400 opacity-0 transition duration-300 group-hover:opacity-100">
+              <p className="mt-2 max-w-[180px] text-sm leading-5 text-slate-400 opacity-0 transition duration-300 group-hover:opacity-100">
                 {description}
               </p>
             </div>
           ))}
+
         </div>
       </div>
     </section>
