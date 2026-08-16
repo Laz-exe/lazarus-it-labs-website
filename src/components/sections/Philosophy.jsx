@@ -18,7 +18,7 @@ export default function Philosophy() {
         </p>
 
         <p className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-slate-400">
-          Whether you're working from home, running a business, or planning for
+          Whether you&apos;re working from home, running a business, or planning for
           the future, our goal is simple:
         </p>
 
