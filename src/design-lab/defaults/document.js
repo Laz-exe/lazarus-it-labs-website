@@ -1,4 +1,15 @@
-export const DOCUMENT_VERSION = 1;
+import {
+  DOCUMENT_FORMAT,
+  DOCUMENT_MODES,
+  DOCUMENT_VERSION,
+  ELEMENT_KINDS,
+  createDocumentMetadata,
+  createSceneSettings,
+  createTransform2D,
+  createTransform3D,
+} from "../engine/schema";
+
+export { DOCUMENT_VERSION };
 
 export const viewportPresets = {
   desktop: {
@@ -351,23 +362,63 @@ export const defaultCanvas = {
   },
 };
 
+function createVersion2Objects() {
+  return Object.fromEntries(
+    Object.entries(defaultObjects).map(([id, object]) => [
+      id,
+      {
+        ...structuredClone(object),
+        kind: ELEMENT_KINDS.OBJECT,
+        transform2D: createTransform2D({
+          x: object.x,
+          y: object.y,
+          scaleX: object.scale,
+          scaleY: object.scale,
+          rotation: object.rotation,
+        }),
+        transform3D: createTransform3D(),
+      },
+    ]),
+  );
+}
+
+function createVersion2Lines() {
+  return Object.fromEntries(
+    Object.entries(defaultLines).map(([id, line]) => [
+      id,
+      {
+        ...structuredClone(line),
+        kind: ELEMENT_KINDS.LINE,
+        transform2D: createTransform2D({
+          x: (line.x1 + line.x2) / 2,
+          y: (line.y1 + line.y2) / 2,
+        }),
+        transform3D: createTransform3D(),
+      },
+    ]),
+  );
+}
+
 export function createDefaultDocument() {
+  const metadata = createDocumentMetadata();
+
   return {
-    format: "lazarus-design-document",
+    format: DOCUMENT_FORMAT,
     version: DOCUMENT_VERSION,
 
-    metadata: {
-      name: "Untitled Lazarus Project",
+    metadata,
 
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
+    scene: createSceneSettings({
+      mode: DOCUMENT_MODES.TWO_D,
+    }),
+
+    assets: {},
 
     canvas: structuredClone(defaultCanvas),
 
-    objects: structuredClone(defaultObjects),
+    objects: createVersion2Objects(),
 
-    lines: structuredClone(defaultLines),
+    lines: createVersion2Lines(),
 
     layerOrder: [...defaultLayerOrder],
 
