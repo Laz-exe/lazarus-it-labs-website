@@ -1,5 +1,4 @@
 import {
-  DOCUMENT_VERSION,
   createDefaultDocument,
 } from "../defaults/document";
 
@@ -7,6 +6,17 @@ import {
   normalizeAssetRegistry,
   pruneUnusedAssets,
 } from "./assets";
+
+import {
+  DOCUMENT_FORMAT,
+  DOCUMENT_MODES,
+  DOCUMENT_VERSION,
+  ELEMENT_KINDS,
+  createDocumentMetadata,
+  createSceneSettings,
+  createTransform2D,
+  createTransform3D,
+} from "./schema";
 
 export function cloneDocument(document) {
   return structuredClone(document);
@@ -70,7 +80,7 @@ export function validateProjectDocument(document) {
 
   if (
     document.format !==
-    "lazarus-design-document"
+    DOCUMENT_FORMAT
   ) {
     throw new Error(
       "This is not a Lazarus Design Lab project.",
@@ -79,7 +89,11 @@ export function validateProjectDocument(document) {
 
   if (
     typeof document.version !==
-    "number"
+      "number" ||
+    !Number.isInteger(
+      document.version,
+    ) ||
+    document.version < 1
   ) {
     throw new Error(
       "Project file does not contain a valid version.",
@@ -117,17 +131,39 @@ export function migrateProjectDocument(document) {
       document,
     );
 
-  /*
-   * Version 1 projects created before the asset
-   * registry existed will not contain "assets".
-   *
-   * Add it automatically so older .laz files
-   * still open correctly.
-   */
+  migrated.format =
+    DOCUMENT_FORMAT;
+
+  migrated.version =
+    DOCUMENT_VERSION;
+
+  migrated.metadata =
+    migrateMetadata(
+      migrated.metadata,
+    );
+
+  migrated.scene =
+    createSceneSettings({
+      mode:
+        DOCUMENT_MODES.TWO_D,
+      ...migrated.scene,
+    });
 
   migrated.assets =
     normalizeAssetRegistry(
       migrated.assets,
+    );
+
+  migrated.objects =
+    migrateElements(
+      migrated.objects,
+      ELEMENT_KINDS.OBJECT,
+    );
+
+  migrated.lines =
+    migrateElements(
+      migrated.lines,
+      ELEMENT_KINDS.LINE,
     );
 
   if (
@@ -265,7 +301,7 @@ export function downloadBlob({
 
 function prepareDocumentForSave(document) {
   const copy =
-    structuredClone(
+    migrateProjectDocument(
       document,
     );
 
@@ -338,6 +374,91 @@ function prepareDocumentForSave(document) {
         new Date().toISOString(),
     },
   };
+}
+
+function migrateMetadata(metadata) {
+  const defaults =
+    createDocumentMetadata({
+      name:
+        metadata?.name,
+      now:
+        metadata?.createdAt ??
+        metadata?.updatedAt,
+    });
+
+  return {
+    ...defaults,
+    ...metadata,
+  };
+}
+
+function migrateElements(elements, kind) {
+  return Object.fromEntries(
+    Object.entries(
+      elements ?? {},
+    ).map(
+      ([id, element]) => [
+        id,
+        migrateElement(
+          element,
+          kind,
+        ),
+      ],
+    ),
+  );
+}
+
+function migrateElement(element, kind) {
+  const legacyTransform =
+    kind === ELEMENT_KINDS.LINE
+      ? {
+          x:
+            averageCoordinates(
+              element.x1,
+              element.x2,
+            ),
+          y:
+            averageCoordinates(
+              element.y1,
+              element.y2,
+            ),
+        }
+      : {
+          x: element.x ?? 0,
+          y: element.y ?? 0,
+          scaleX:
+            element.scale ?? 1,
+          scaleY:
+            element.scale ?? 1,
+          rotation:
+            element.rotation ?? 0,
+        };
+
+  return {
+    ...element,
+    kind:
+      element.kind ?? kind,
+    transform2D:
+      createTransform2D({
+        ...legacyTransform,
+        ...element.transform2D,
+      }),
+    transform3D:
+      createTransform3D(
+        element.transform3D,
+      ),
+  };
+}
+
+function averageCoordinates(first, second) {
+  if (
+    typeof first !== "number" ||
+    typeof second !== "number"
+  ) {
+    return 0;
+  }
+
+  return (first + second) / 2;
 }
 
 function slugify(value) {
