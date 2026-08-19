@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 
 import ProjectToolbar from "@/design-lab/components/ProjectToolbar";
+import SceneModeSwitch from "@/design-lab/components/SceneModeSwitch";
 
 import {
   createDefaultDocument,
@@ -45,8 +46,21 @@ import {
 } from "@/design-lab/engine/document";
 
 import {
+  exportStaticProjectZip,
   exportStaticWebsite,
 } from "@/design-lab/engine/export";
+
+import {
+  createAssetFromFile,
+  normalizeAssetRegistry,
+} from "@/design-lab/engine/assets";
+
+import {
+  createSceneSettings,
+  DOCUMENT_FORMAT,
+  DOCUMENT_MODES,
+  DOCUMENT_VERSION,
+} from "@/design-lab/engine/schema";
 
 /* =========================================================
    DEFINITIONS
@@ -447,6 +461,7 @@ export default function DesignLab() {
 
   const [objects, setObjects] = useState(defaultObjects);
   const [lines, setLines] = useState(defaultLines);
+  const [assets, setAssets] = useState({});
 
   const [layerOrder, setLayerOrder] = useState(defaultLayerOrder);
   const [sidebarOrder, setSidebarOrder] = useState(defaultSidebarOrder);
@@ -455,6 +470,10 @@ export default function DesignLab() {
   const [geometry, setGeometry] = useState(defaultGeometry);
   const [snapSettings, setSnapSettings] = useState(defaultSnapSettings);
   const [canvas, setCanvas] = useState(defaultCanvas);
+
+  const [sceneMode, setSceneMode] = useState(
+    DOCUMENT_MODES.TWO_D,
+  );
 
   const [selectedId, setSelectedId] = useState("core");
   const [activeTool, setActiveTool] = useState("select");
@@ -558,6 +577,8 @@ export default function DesignLab() {
             canvas,
           ),
 
+        assets,
+
         objects:
           serializeObjects(
             objects,
@@ -576,6 +597,7 @@ export default function DesignLab() {
     );
   }, [
     canvas,
+    assets,
     objects,
     lines,
     layerOrder,
@@ -1548,7 +1570,7 @@ export default function DesignLab() {
      IMAGE UPLOADS
      ======================================================= */
 
-  function handleImageUpload(event) {
+  async function handleImageUpload(event) {
     const file =
       event.target.files?.[0];
 
@@ -1565,87 +1587,108 @@ export default function DesignLab() {
       return;
     }
 
-    const id =
-      `image-${Date.now()}`;
+    try {
+      const asset =
+        await createAssetFromFile(
+          file,
+        );
 
-    const src =
-      URL.createObjectURL(
-        file,
-      );
+      const id =
+        `image-${Date.now()}`;
 
-    const image =
-      new window.Image();
+      const image =
+        new window.Image();
 
-    image.onload = () => {
-      const aspect =
-        image.naturalWidth /
-          image.naturalHeight ||
-        1;
+      image.onload = () => {
+        const aspect =
+          image.naturalWidth /
+            image.naturalHeight ||
+          1;
 
-      setObjects(
-        (current) => ({
-          ...current,
+        setAssets(
+          (current) => ({
+            ...current,
 
-          [id]: {
+            [asset.id]:
+              asset,
+          }),
+        );
+
+        setObjects(
+          (current) => ({
+            ...current,
+
+            [id]: {
+              id,
+
+              type:
+                "image",
+
+              name:
+                file.name,
+
+              assetId:
+                asset.id,
+
+              src:
+                null,
+
+              x: 50,
+              y: 50,
+
+              scale: 1,
+              rotation: 0,
+
+              visible: true,
+              locked: false,
+
+              opacity: 1,
+
+              behavior:
+                "none",
+
+              pairId:
+                null,
+
+              parentId:
+                null,
+
+              attachedImage:
+                null,
+
+              aspect,
+            },
+          }),
+        );
+
+        setLayerOrder(
+          (current) => [
             id,
+            ...current,
+          ],
+        );
 
-            type:
-              "image",
+        setSelectedId(id);
+        setActiveTool(
+          "select",
+        );
+      };
 
-            name:
-              file.name,
-
-            src,
-
-            x: 50,
-            y: 50,
-
-            scale: 1,
-            rotation: 0,
-
-            visible: true,
-            locked: false,
-
-            opacity: 1,
-
-            behavior:
-              "none",
-
-            pairId:
-              null,
-
-            parentId:
-              null,
-
-            attachedImage:
-              null,
-
-            aspect,
-          },
-        }),
+      image.src =
+        asset.dataUrl;
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to import image.",
       );
-
-      setLayerOrder(
-        (current) => [
-          id,
-          ...current,
-        ],
-      );
-
-      setSelectedId(id);
-      setActiveTool(
-        "select",
-      );
-    };
-
-    image.src =
-      src;
-
-    event.target.value =
-      "";
+    } finally {
+      event.target.value =
+        "";
+    }
   }
 
-  function handleAttachImage(event) {
+  async function handleAttachImage(event) {
     const file =
       event.target.files?.[0];
 
@@ -1670,39 +1713,60 @@ export default function DesignLab() {
       return;
     }
 
-    const src =
-      URL.createObjectURL(
-        file,
+    try {
+      const asset =
+        await createAssetFromFile(
+          file,
+        );
+
+      setAssets(
+        (current) => ({
+          ...current,
+
+          [asset.id]:
+            asset,
+        }),
       );
 
-    setObjects(
-      (current) => ({
-        ...current,
+      setObjects(
+        (current) => ({
+          ...current,
 
-        [selectedObject.id]: {
-          ...current[
-            selectedObject.id
-          ],
+          [selectedObject.id]: {
+            ...current[
+              selectedObject.id
+            ],
 
-          attachedImage: {
-            src,
+            attachedImage: {
+              assetId:
+                asset.id,
 
-            name:
-              file.name,
+              src:
+                null,
 
-            opacity: 1,
+              name:
+                file.name,
 
-            scale: 1,
+              opacity: 1,
 
-            fit:
-              "contain",
+              scale: 1,
+
+              fit:
+                "contain",
+            },
           },
-        },
-      }),
-    );
-
-    event.target.value =
-      "";
+        }),
+      );
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to attach image.",
+      );
+    } finally {
+      event.target.value =
+        "";
+    }
   }
 
   function removeAttachedImage(
@@ -1739,7 +1803,7 @@ export default function DesignLab() {
     );
   }
 
-  function handleBackgroundUpload(event) {
+  async function handleBackgroundUpload(event) {
     const file =
       event.target.files?.[0];
 
@@ -1756,32 +1820,52 @@ export default function DesignLab() {
       return;
     }
 
-    const src =
-      URL.createObjectURL(
-        file,
+    try {
+      const asset =
+        await createAssetFromFile(
+          file,
+        );
+
+      setAssets(
+        (current) => ({
+          ...current,
+
+          [asset.id]:
+            asset,
+        }),
       );
 
-    setCanvas(
-      (current) => ({
-        ...current,
+      setCanvas(
+        (current) => ({
+          ...current,
 
-        background: {
-          ...current.background,
+          background: {
+            ...current.background,
 
-          type:
-            "image",
+            type:
+              "image",
 
-          imageSrc:
-            src,
+            assetId:
+              asset.id,
 
-          imageName:
-            file.name,
-        },
-      }),
-    );
+            imageSrc:
+              null,
 
-    event.target.value =
-      "";
+            imageName:
+              file.name,
+          },
+        }),
+      );
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to import background image.",
+      );
+    } finally {
+      event.target.value =
+        "";
+    }
   }
 
   function updateBackground(
@@ -2350,6 +2434,8 @@ export default function DesignLab() {
      ======================================================= */
 
   function resetDocument() {
+    setAssets({});
+
     setObjects(
       defaultObjects,
     );
@@ -2382,6 +2468,10 @@ export default function DesignLab() {
       defaultCanvas,
     );
 
+    setSceneMode(
+      DOCUMENT_MODES.TWO_D,
+    );
+
     setSelectedId(
       "core",
     );
@@ -2406,10 +2496,10 @@ export default function DesignLab() {
   function buildCurrentDocument() {
     return {
       format:
-        "lazarus-design-document",
+        DOCUMENT_FORMAT,
 
       version:
-        1,
+        DOCUMENT_VERSION,
 
       metadata: {
         name:
@@ -2423,9 +2513,26 @@ export default function DesignLab() {
           new Date().toISOString(),
       },
 
+      scene:
+        createSceneSettings({
+          mode:
+            sceneMode,
+
+          unit:
+            sceneMode ===
+            DOCUMENT_MODES.THREE_D
+              ? "meter"
+              : "pixel",
+        }),
+
       canvas:
         structuredClone(
           canvas,
+        ),
+
+      assets:
+        structuredClone(
+          assets,
         ),
 
       objects:
@@ -2493,10 +2600,25 @@ export default function DesignLab() {
       "Untitled Lazarus Project",
     );
 
+    setSceneMode(
+      document.scene?.mode ===
+      DOCUMENT_MODES.THREE_D
+        ? DOCUMENT_MODES.THREE_D
+        : DOCUMENT_MODES.TWO_D,
+    );
+
     setCanvas(
       structuredClone(
         document.canvas ??
         defaultCanvas,
+      ),
+    );
+
+    setAssets(
+      structuredClone(
+        normalizeAssetRegistry(
+          document.assets,
+        ),
       ),
     );
 
@@ -2631,9 +2753,24 @@ export default function DesignLab() {
     );
   }
 
+  async function handleExportZip() {
+    try {
+      await exportStaticProjectZip(
+        buildCurrentDocument(),
+      );
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to export project ZIP.",
+      );
+    }
+  }
+
   const backgroundStyle =
     buildBackgroundStyle(
       canvas.background,
+      assets,
     );
 
   const backgroundAnimationClass =
@@ -2700,6 +2837,9 @@ export default function DesignLab() {
             }
             removeAttachedImage={
               removeAttachedImage
+            }
+            assets={
+              assets
             }
           />
         );
@@ -2970,6 +3110,14 @@ export default function DesignLab() {
           onExportHtml={
             handleExportHtml
           }
+          onExportZip={
+            handleExportZip
+          }
+        />
+
+        <SceneModeSwitch
+          mode={sceneMode}
+          onModeChange={setSceneMode}
         />
 
         <ViewportToolbar
@@ -3303,6 +3451,9 @@ export default function DesignLab() {
                               object={
                                 item
                               }
+                              assets={
+                                assets
+                              }
                             />
                           </TransformItem>
                         );
@@ -3374,6 +3525,9 @@ export default function DesignLab() {
                               object={
                                 item
                               }
+                              assets={
+                                assets
+                              }
                             />
                           </TransformItem>
                         );
@@ -3431,11 +3585,17 @@ export default function DesignLab() {
                               object={
                                 item
                               }
+                              assets={
+                                assets
+                              }
                             />
 
                             <AttachedImage
                               object={
                                 item
+                              }
+                              assets={
+                                assets
                               }
                             />
                           </TransformItem>
@@ -3662,6 +3822,7 @@ function LayerStackContent({
   removeChildObject,
   onAttachImage,
   removeAttachedImage,
+  assets,
 }) {
   const selectedObject =
     objects[selectedId] ??
@@ -4098,9 +4259,15 @@ function LayerStackContent({
                 <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30 p-3">
                   <img
                     src={
-                      selectedObject
-                        .attachedImage
-                        .src
+                      resolveEditorAssetSource(
+                        assets,
+                        selectedObject
+                          .attachedImage
+                          .assetId,
+                        selectedObject
+                          .attachedImage
+                          .src,
+                      )
                     }
                     alt={
                       selectedObject
@@ -4641,7 +4808,8 @@ function BackgroundPanelContent({
           >
             <ImagePlus className="h-4 w-4" />
 
-            {background.imageSrc
+            {background.assetId ||
+            background.imageSrc
               ? "Replace Background Image"
               : "Upload Background Image"}
           </button>
@@ -5827,6 +5995,7 @@ function HeroCore() {
         src="/logo-emblem.png"
         alt="Lazarus emblem"
         fill
+        sizes="(max-width: 768px) 70vw, 520px"
         priority
         draggable={
           false
@@ -5863,11 +6032,27 @@ function HeroNode({
 
 function UploadedImage({
   object,
+  assets,
 }) {
+  const src =
+    resolveEditorAssetSource(
+      assets,
+      object.assetId,
+      object.src,
+    );
+
+  if (!src) {
+    return (
+      <div className="flex h-full w-full items-center justify-center rounded-xl border border-dashed border-white/20 bg-black/20 px-4 text-center text-xs text-slate-500">
+        Missing image asset
+      </div>
+    );
+  }
+
   return (
     <img
       src={
-        object.src
+        src
       }
       alt={
         object.name
@@ -5882,6 +6067,7 @@ function UploadedImage({
 
 function AttachedImage({
   object,
+  assets,
 }) {
   const attachment =
     object.attachedImage;
@@ -5890,11 +6076,22 @@ function AttachedImage({
     return null;
   }
 
+  const src =
+    resolveEditorAssetSource(
+      assets,
+      attachment.assetId,
+      attachment.src,
+    );
+
+  if (!src) {
+    return null;
+  }
+
   return (
     <div className="absolute inset-0 flex items-center justify-center">
       <img
         src={
-          attachment.src
+          src
         }
         alt={
           attachment.name
@@ -6519,6 +6716,7 @@ function SafeArea() {
 
 function buildBackgroundStyle(
   background,
+  assets,
 ) {
   if (
     background.type ===
@@ -6542,22 +6740,43 @@ function buildBackgroundStyle(
 
   if (
     background.type ===
-      "image" &&
-    background.imageSrc
+    "image"
   ) {
-    return {
-      backgroundImage:
-        `url("${background.imageSrc}")`,
+    const src =
+      resolveEditorAssetSource(
+        assets,
+        background.assetId,
+        background.imageSrc,
+      );
 
-      backgroundSize:
-        background.imageFit,
+    if (src) {
+      return {
+        backgroundImage:
+          `url("${src}")`,
 
-      backgroundPosition:
-        `${background.imagePositionX}% ${background.imagePositionY}%`,
+        backgroundSize:
+          background.imageFit ===
+          "fill"
+            ? "100% 100%"
+            : background.imageFit,
 
-      opacity:
-        background.imageOpacity,
-    };
+        backgroundPosition:
+          `${background.imagePositionX}% ${background.imagePositionY}%`,
+
+        backgroundRepeat:
+          background.repeat ||
+          "no-repeat",
+
+        opacity:
+          background.imageOpacity,
+
+        filter:
+          `blur(${background.blur}px) brightness(${background.brightness}%) contrast(${background.contrast}%) saturate(${background.saturation}%) grayscale(${background.grayscale}%) sepia(${background.sepia}%) hue-rotate(${background.hue}deg)`,
+
+        transform:
+          `scale(${background.imageScale}) rotate(${background.imageRotation}deg)`,
+      };
+    }
   }
 
   return {};
@@ -6765,6 +6984,31 @@ function distanceBetween(
         y1) **
         2,
   );
+}
+
+function resolveEditorAssetSource(
+  assets,
+  assetId,
+  legacySrc,
+) {
+  if (
+    assetId &&
+    assets?.[assetId]
+      ?.dataUrl
+  ) {
+    return assets[assetId]
+      .dataUrl;
+  }
+
+  if (
+    typeof legacySrc ===
+      "string" &&
+    legacySrc
+  ) {
+    return legacySrc;
+  }
+
+  return null;
 }
 
 function buildRenderableLines(
