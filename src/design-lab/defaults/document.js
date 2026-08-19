@@ -3,6 +3,7 @@ import {
   DOCUMENT_MODES,
   DOCUMENT_VERSION,
   ELEMENT_KINDS,
+  PRIMITIVE_3D_TYPES,
   createDocumentMetadata,
   createSceneSettings,
   createTransform2D,
@@ -362,6 +363,32 @@ export const defaultCanvas = {
   },
 };
 
+export const STARTER_CUBE_ID = "starter-cube";
+
+export function createDefaultThreeDScene() {
+  return {
+    objects: {
+      [STARTER_CUBE_ID]: {
+        id: STARTER_CUBE_ID,
+        kind: ELEMENT_KINDS.OBJECT,
+        type: PRIMITIVE_3D_TYPES.BOX,
+        name: "Starter Cube",
+        visible: true,
+        locked: false,
+        transform3D: createTransform3D({
+          position: {
+            x: 0,
+            y: 1,
+            z: 0,
+          },
+        }),
+      },
+    },
+    layerOrder: [STARTER_CUBE_ID],
+    selectedObjectId: STARTER_CUBE_ID,
+  };
+}
+
 function createVersion2Objects() {
   return Object.fromEntries(
     Object.entries(defaultObjects).map(([id, object]) => [
@@ -411,6 +438,8 @@ export function createDefaultDocument() {
     scene: createSceneSettings({
       mode: DOCUMENT_MODES.TWO_D,
     }),
+
+    scene3D: createDefaultThreeDScene(),
 
     assets: {},
 

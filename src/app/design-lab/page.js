@@ -39,6 +39,8 @@ import ThreeWorkspace from "@/design-lab/components/ThreeWorkspace";
 
 import {
   createDefaultDocument,
+  createDefaultThreeDScene,
+  STARTER_CUBE_ID,
 } from "@/design-lab/defaults/document";
 
 import {
@@ -474,6 +476,10 @@ export default function DesignLab() {
 
   const [sceneMode, setSceneMode] = useState(
     DOCUMENT_MODES.TWO_D,
+  );
+
+  const [scene3D, setScene3D] = useState(
+    createDefaultThreeDScene,
   );
 
   const [selectedId, setSelectedId] = useState("core");
@@ -2473,6 +2479,10 @@ export default function DesignLab() {
       DOCUMENT_MODES.TWO_D,
     );
 
+    setScene3D(
+      createDefaultThreeDScene(),
+    );
+
     setSelectedId(
       "core",
     );
@@ -2525,6 +2535,11 @@ export default function DesignLab() {
               ? "meter"
               : "pixel",
         }),
+
+      scene3D:
+        structuredClone(
+          scene3D,
+        ),
 
       canvas:
         structuredClone(
@@ -2606,6 +2621,13 @@ export default function DesignLab() {
       DOCUMENT_MODES.THREE_D
         ? DOCUMENT_MODES.THREE_D
         : DOCUMENT_MODES.TWO_D,
+    );
+
+    setScene3D(
+      structuredClone(
+        document.scene3D ??
+        createDefaultThreeDScene(),
+      ),
     );
 
     setCanvas(
@@ -2720,6 +2742,28 @@ export default function DesignLab() {
 
     loadProjectDocument(
       next,
+    );
+  }
+
+  function updateStarterCubeTransform(
+    transform3D,
+  ) {
+    setScene3D(
+      (current) => ({
+        ...current,
+        objects: {
+          ...current.objects,
+          [STARTER_CUBE_ID]: {
+            ...current.objects[
+              STARTER_CUBE_ID
+            ],
+            transform3D:
+              structuredClone(
+                transform3D,
+              ),
+          },
+        },
+      }),
     );
   }
 
@@ -3195,7 +3239,18 @@ export default function DesignLab() {
             />
 
             {/* STEP 8E: THREE WORKSPACE */}
-            {sceneMode === "3d" && <ThreeWorkspace />}
+            {sceneMode === "3d" && (
+              <ThreeWorkspace
+                transform3D={
+                  scene3D.objects?.[
+                    STARTER_CUBE_ID
+                  ]?.transform3D
+                }
+                onTransformChange={
+                  updateStarterCubeTransform
+                }
+              />
+            )}
 
             <div className={`${sceneMode === "3d" ? "hidden" : "flex"} w-full justify-center overflow-auto rounded-[2rem] border border-white/5 bg-black/30 p-4 md:p-8`}>
               <div

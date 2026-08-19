@@ -5,48 +5,90 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const INITIAL_CAMERA = [7, 5, 8];
-const INITIAL_TRANSFORM = {
+export const DEFAULT_STARTER_CUBE_TRANSFORM = {
   position: { x: 0, y: 1, z: 0 },
   rotation: { x: 0, y: 0, z: 0 },
   scale: { x: 1, y: 1, z: 1 },
 };
 
-const cloneTransform = (transform = INITIAL_TRANSFORM) => ({
-  position: { ...transform.position },
-  rotation: { ...transform.rotation },
-  scale: { ...transform.scale },
+const normalizeTransform = (transform = DEFAULT_STARTER_CUBE_TRANSFORM) => ({
+  position: {
+    ...DEFAULT_STARTER_CUBE_TRANSFORM.position,
+    ...transform?.position,
+  },
+  rotation: {
+    ...DEFAULT_STARTER_CUBE_TRANSFORM.rotation,
+    ...transform?.rotation,
+  },
+  scale: {
+    ...DEFAULT_STARTER_CUBE_TRANSFORM.scale,
+    ...transform?.scale,
+  },
 });
 
 const round = (value) => Math.round(value * 100) / 100;
 const radiansToDegrees = (value) => round((value * 180) / Math.PI);
 const degreesToRadians = (value) => (value * Math.PI) / 180;
 
-export default function ThreeWorkspace() {
+const createControlValues = (transform) => {
+  const normalized = normalizeTransform(transform);
+
+  return {
+    position: {
+      ...normalized.position,
+    },
+    rotation: {
+      x: radiansToDegrees(normalized.rotation.x),
+      y: radiansToDegrees(normalized.rotation.y),
+      z: radiansToDegrees(normalized.rotation.z),
+    },
+    scale: {
+      ...normalized.scale,
+    },
+  };
+};
+
+export default function ThreeWorkspace({
+  transform3D = DEFAULT_STARTER_CUBE_TRANSFORM,
+  onTransformChange,
+}) {
   const mountRef = useRef(null);
   const sceneApiRef = useRef(null);
+  const onTransformChangeRef = useRef(onTransformChange);
+  const documentTransformRef = useRef(normalizeTransform(transform3D));
   const [selected, setSelected] = useState(false);
   const [transformMode, setTransformMode] = useState("translate");
-  const [transform, setTransform] = useState(() => cloneTransform());
+  const [transform, setTransform] = useState(() =>
+    createControlValues(transform3D),
+  );
+
+  useEffect(() => {
+    onTransformChangeRef.current = onTransformChange;
+  }, [onTransformChange]);
 
   const syncTransformFromObject = useCallback((object) => {
     if (!object) return;
-    setTransform({
+    const nextDocumentTransform = {
       position: {
         x: round(object.position.x),
         y: round(object.position.y),
         z: round(object.position.z),
       },
       rotation: {
-        x: radiansToDegrees(object.rotation.x),
-        y: radiansToDegrees(object.rotation.y),
-        z: radiansToDegrees(object.rotation.z),
+        x: object.rotation.x,
+        y: object.rotation.y,
+        z: object.rotation.z,
       },
       scale: {
         x: round(object.scale.x),
         y: round(object.scale.y),
         z: round(object.scale.z),
       },
-    });
+    };
+
+    documentTransformRef.current = nextDocumentTransform;
+    setTransform(createControlValues(nextDocumentTransform));
+    onTransformChangeRef.current?.(nextDocumentTransform);
   }, []);
 
   useEffect(() => {
@@ -148,7 +190,22 @@ export default function ThreeWorkspace() {
         }),
       );
       cube.name = "Starter Cube";
-      cube.position.set(0, 1, 0);
+      const initialTransform = documentTransformRef.current;
+      cube.position.set(
+        initialTransform.position.x,
+        initialTransform.position.y,
+        initialTransform.position.z,
+      );
+      cube.rotation.set(
+        initialTransform.rotation.x,
+        initialTransform.rotation.y,
+        initialTransform.rotation.z,
+      );
+      cube.scale.set(
+        initialTransform.scale.x,
+        initialTransform.scale.y,
+        initialTransform.scale.z,
+      );
       cube.castShadow = true;
       cube.receiveShadow = true;
       scene.add(cube);
@@ -195,9 +252,22 @@ export default function ThreeWorkspace() {
       };
 
       const resetTransform = () => {
-        cube.position.set(0, 1, 0);
-        cube.rotation.set(0, 0, 0);
-        cube.scale.set(1, 1, 1);
+        const reset = DEFAULT_STARTER_CUBE_TRANSFORM;
+        cube.position.set(
+          reset.position.x,
+          reset.position.y,
+          reset.position.z,
+        );
+        cube.rotation.set(
+          reset.rotation.x,
+          reset.rotation.y,
+          reset.rotation.z,
+        );
+        cube.scale.set(
+          reset.scale.x,
+          reset.scale.y,
+          reset.scale.z,
+        );
         syncTransformFromObject(cube);
       };
 
@@ -262,6 +332,33 @@ export default function ThreeWorkspace() {
       sceneApiRef.current = null;
     };
   }, [syncTransformFromObject]);
+
+  useEffect(() => {
+    const normalized = normalizeTransform(transform3D);
+    documentTransformRef.current = normalized;
+    // An opened or reset document is an external source of truth for these controls.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTransform(createControlValues(normalized));
+
+    const cube = sceneApiRef.current?.cube;
+    if (!cube) return;
+
+    cube.position.set(
+      normalized.position.x,
+      normalized.position.y,
+      normalized.position.z,
+    );
+    cube.rotation.set(
+      normalized.rotation.x,
+      normalized.rotation.y,
+      normalized.rotation.z,
+    );
+    cube.scale.set(
+      normalized.scale.x,
+      normalized.scale.y,
+      normalized.scale.z,
+    );
+  }, [transform3D]);
 
   const changeMode = (mode) => {
     setTransformMode(mode);

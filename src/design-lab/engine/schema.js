@@ -28,6 +28,10 @@ export const ELEMENT_KINDS = Object.freeze({
   LIGHT: "light",
 });
 
+export const PRIMITIVE_3D_TYPES = Object.freeze({
+  BOX: "box",
+});
+
 export const ASSET_KINDS = Object.freeze({
   IMAGE: "image",
   SVG: "svg",
@@ -178,6 +182,11 @@ export function createDocumentShell({
       }),
     scene:
       createSceneSettings(scene),
+    scene3D: {
+      objects: {},
+      layerOrder: [],
+      selectedObjectId: null,
+    },
     assets: {},
     objects: {},
     lines: {},

@@ -1,5 +1,6 @@
 import {
   createDefaultDocument,
+  createDefaultThreeDScene,
 } from "../defaults/document";
 
 import {
@@ -148,6 +149,11 @@ export function migrateProjectDocument(document) {
         DOCUMENT_MODES.TWO_D,
       ...migrated.scene,
     });
+
+  migrated.scene3D =
+    migrateThreeDScene(
+      migrated.scene3D,
+    );
 
   migrated.assets =
     normalizeAssetRegistry(
@@ -389,6 +395,66 @@ function migrateMetadata(metadata) {
   return {
     ...defaults,
     ...metadata,
+  };
+}
+
+function migrateThreeDScene(scene3D) {
+  const defaults =
+    createDefaultThreeDScene();
+
+  const sourceObjects =
+    scene3D?.objects ??
+    defaults.objects;
+
+  const objects =
+    Object.fromEntries(
+      Object.entries(
+        sourceObjects,
+      ).map(
+        ([id, object]) => [
+          id,
+          {
+            ...object,
+            id,
+            transform3D:
+              createTransform3D(
+                object?.transform3D,
+              ),
+          },
+        ],
+      ),
+    );
+
+  const requestedLayerOrder =
+    Array.isArray(
+      scene3D?.layerOrder,
+    )
+      ? scene3D.layerOrder
+      : defaults.layerOrder;
+
+  const layerOrder = [
+    ...requestedLayerOrder.filter(
+      (id) => objects[id],
+    ),
+    ...Object.keys(objects).filter(
+      (id) =>
+        !requestedLayerOrder.includes(
+          id,
+        ),
+    ),
+  ];
+
+  return {
+    ...defaults,
+    ...scene3D,
+    objects,
+    layerOrder,
+    selectedObjectId:
+      objects[
+        scene3D?.selectedObjectId
+      ]
+        ? scene3D.selectedObjectId
+        : layerOrder[0] ?? null,
   };
 }
 
