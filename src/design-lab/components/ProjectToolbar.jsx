@@ -2,6 +2,7 @@
 
 import {
   ChevronDown,
+  Archive,
   Code2,
   Download,
   FilePlus2,
@@ -21,6 +22,7 @@ export default function ProjectToolbar({
   onSave,
   onOpen,
   onExportHtml,
+  onExportZip,
 }) {
   const inputRef =
     useRef(null);
@@ -152,16 +154,44 @@ export default function ProjectToolbar({
 
             <div className="my-2 h-px bg-white/10" />
 
+            <button
+              type="button"
+              onClick={async () => {
+                await onExportZip();
+
+                setShowExportMenu(
+                  false,
+                );
+              }}
+              className="flex w-full items-start gap-3 rounded-xl p-3 text-left hover:bg-white/[0.05]"
+            >
+              <Archive className="mt-0.5 h-5 w-5 text-[#A78BFA]" />
+
+              <span>
+                <span className="block text-sm font-semibold text-white">
+                  Project ZIP
+                </span>
+
+                <span className="mt-1 block text-xs leading-5 text-slate-500">
+                  Export index.html, CSS,
+                  JavaScript and all project
+                  images as a portable website
+                  folder.
+                </span>
+              </span>
+            </button>
+
+            <div className="my-2 h-px bg-white/10" />
+
             <div className="px-3 py-2">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                Coming next
+                Next Export Target
               </p>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                Multi-file static project,
-                Next.js project export,
-                asset bundling and ZIP
-                export.
+                Next.js project generation
+                will come after the static
+                project exporter is stable.
               </p>
             </div>
           </div>
