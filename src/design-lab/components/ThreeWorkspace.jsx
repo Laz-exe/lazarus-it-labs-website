@@ -1,12 +1,53 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+/* eslint-disable react-hooks/immutability -- Three.js scene objects use an imperative mutable API by design. */
+
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const INITIAL_CAMERA = [7, 5, 8];
+const INITIAL_TRANSFORM = {
+  position: { x: 0, y: 1, z: 0 },
+  rotation: { x: 0, y: 0, z: 0 },
+  scale: { x: 1, y: 1, z: 1 },
+};
+
+const cloneTransform = (transform = INITIAL_TRANSFORM) => ({
+  position: { ...transform.position },
+  rotation: { ...transform.rotation },
+  scale: { ...transform.scale },
+});
+
+const round = (value) => Math.round(value * 100) / 100;
+const radiansToDegrees = (value) => round((value * 180) / Math.PI);
+const degreesToRadians = (value) => (value * Math.PI) / 180;
 
 export default function ThreeWorkspace() {
   const mountRef = useRef(null);
-  const resetViewRef = useRef(null);
+  const sceneApiRef = useRef(null);
+  const [selected, setSelected] = useState(false);
+  const [transformMode, setTransformMode] = useState("translate");
+  const [transform, setTransform] = useState(() => cloneTransform());
+
+  const syncTransformFromObject = useCallback((object) => {
+    if (!object) return;
+    setTransform({
+      position: {
+        x: round(object.position.x),
+        y: round(object.position.y),
+        z: round(object.position.z),
+      },
+      rotation: {
+        x: radiansToDegrees(object.rotation.x),
+        y: radiansToDegrees(object.rotation.y),
+        z: radiansToDegrees(object.rotation.z),
+      },
+      scale: {
+        x: round(object.scale.x),
+        y: round(object.scale.y),
+        z: round(object.scale.z),
+      },
+    });
+  }, []);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -16,13 +57,18 @@ export default function ThreeWorkspace() {
     let frameId = 0;
     let resizeObserver;
     let renderer;
-    let controls;
+    let orbitControls;
+    let transformControls;
     let scene;
+    let cube;
 
     async function initialize() {
       const THREE = await import("three");
       const { OrbitControls } = await import(
         "three/addons/controls/OrbitControls.js"
+      );
+      const { TransformControls } = await import(
+        "three/addons/controls/TransformControls.js"
       );
 
       if (disposed) return;
@@ -34,7 +80,7 @@ export default function ThreeWorkspace() {
       const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
       camera.position.set(...INITIAL_CAMERA);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -44,17 +90,16 @@ export default function ThreeWorkspace() {
       renderer.domElement.className = "block h-full w-full";
       mount.appendChild(renderer.domElement);
 
-      controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.075;
-      controls.target.set(0, 1, 0);
-      controls.minDistance = 2.5;
-      controls.maxDistance = 40;
-      controls.maxPolarAngle = Math.PI * 0.495;
-      controls.update();
+      orbitControls = new OrbitControls(camera, renderer.domElement);
+      orbitControls.enableDamping = true;
+      orbitControls.dampingFactor = 0.075;
+      orbitControls.target.set(0, 1, 0);
+      orbitControls.minDistance = 2.5;
+      orbitControls.maxDistance = 40;
+      orbitControls.maxPolarAngle = Math.PI * 0.495;
+      orbitControls.update();
 
-      const hemisphere = new THREE.HemisphereLight(0xb9c9ff, 0x18101f, 1.7);
-      scene.add(hemisphere);
+      scene.add(new THREE.HemisphereLight(0xb9c9ff, 0x18101f, 1.7));
 
       const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
       keyLight.position.set(5, 9, 6);
@@ -92,7 +137,7 @@ export default function ThreeWorkspace() {
       axes.position.set(-4.5, 0.02, 4.5);
       scene.add(axes);
 
-      const cube = new THREE.Mesh(
+      cube = new THREE.Mesh(
         new THREE.BoxGeometry(2, 2, 2),
         new THREE.MeshStandardMaterial({
           color: 0x6d28d9,
@@ -102,7 +147,8 @@ export default function ThreeWorkspace() {
           roughness: 0.28,
         }),
       );
-      cube.position.y = 1;
+      cube.name = "Starter Cube";
+      cube.position.set(0, 1, 0);
       cube.castShadow = true;
       cube.receiveShadow = true;
       scene.add(cube);
@@ -113,10 +159,58 @@ export default function ThreeWorkspace() {
       );
       cube.add(edges);
 
-      resetViewRef.current = () => {
+      transformControls = new TransformControls(camera, renderer.domElement);
+      transformControls.setMode("translate");
+      transformControls.setSize(0.8);
+      scene.add(transformControls.getHelper());
+
+      transformControls.addEventListener("dragging-changed", (event) => {
+        orbitControls.enabled = !event.value;
+      });
+      transformControls.addEventListener("objectChange", () => {
+        syncTransformFromObject(cube);
+      });
+
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      const handleSelection = (event) => {
+        if (transformControls.dragging) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const hitCube = raycaster.intersectObject(cube, true).length > 0;
+        if (hitCube) {
+          transformControls.attach(cube);
+          setSelected(true);
+          syncTransformFromObject(cube);
+        }
+      };
+      renderer.domElement.addEventListener("pointerdown", handleSelection);
+
+      const resetView = () => {
         camera.position.set(...INITIAL_CAMERA);
-        controls.target.set(0, 1, 0);
-        controls.update();
+        orbitControls.target.set(0, 1, 0);
+        orbitControls.update();
+      };
+
+      const resetTransform = () => {
+        cube.position.set(0, 1, 0);
+        cube.rotation.set(0, 0, 0);
+        cube.scale.set(1, 1, 1);
+        syncTransformFromObject(cube);
+      };
+
+      sceneApiRef.current = {
+        cube,
+        transformControls,
+        resetView,
+        resetTransform,
+        select: () => {
+          transformControls.attach(cube);
+          setSelected(true);
+          syncTransformFromObject(cube);
+        },
       };
 
       const resize = () => {
@@ -126,18 +220,21 @@ export default function ThreeWorkspace() {
         camera.updateProjectionMatrix();
         renderer.setSize(width, height, false);
       };
-
       resizeObserver = new ResizeObserver(resize);
       resizeObserver.observe(mount);
       resize();
 
       const render = () => {
         if (disposed) return;
-        controls.update();
+        orbitControls.update();
         renderer.render(scene, camera);
         frameId = window.requestAnimationFrame(render);
       };
       render();
+
+      sceneApiRef.current.cleanupSelection = () => {
+        renderer.domElement.removeEventListener("pointerdown", handleSelection);
+      };
     }
 
     initialize().catch((error) => {
@@ -148,7 +245,10 @@ export default function ThreeWorkspace() {
       disposed = true;
       window.cancelAnimationFrame(frameId);
       resizeObserver?.disconnect();
-      controls?.dispose();
+      sceneApiRef.current?.cleanupSelection?.();
+      transformControls?.detach();
+      transformControls?.dispose();
+      orbitControls?.dispose();
       scene?.traverse((object) => {
         object.geometry?.dispose?.();
         if (Array.isArray(object.material)) {
@@ -159,9 +259,27 @@ export default function ThreeWorkspace() {
       });
       renderer?.dispose();
       renderer?.domElement?.remove();
-      resetViewRef.current = null;
+      sceneApiRef.current = null;
     };
-  }, []);
+  }, [syncTransformFromObject]);
+
+  const changeMode = (mode) => {
+    setTransformMode(mode);
+    sceneApiRef.current?.transformControls?.setMode(mode);
+    sceneApiRef.current?.select?.();
+  };
+
+  const updateTransformValue = (group, axis, rawValue) => {
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) return;
+    const cube = sceneApiRef.current?.cube;
+    if (!cube) return;
+
+    if (group === "position") cube.position[axis] = value;
+    if (group === "rotation") cube.rotation[axis] = degreesToRadians(value);
+    if (group === "scale") cube.scale[axis] = Math.max(value, 0.01);
+    syncTransformFromObject(cube);
+  };
 
   return (
     <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#070A12] shadow-2xl shadow-black/60">
@@ -169,22 +287,99 @@ export default function ThreeWorkspace() {
         <div>
           <p className="text-sm font-semibold text-white">3D Workspace</p>
           <p className="mt-0.5 text-xs text-slate-400">
-            Left drag: orbit · Wheel: zoom · Right drag: pan
+            Click the cube to select · Left drag: orbit · Wheel: zoom · Right drag: pan
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => resetViewRef.current?.()}
-          className="rounded-lg border border-[#8B5CF6]/40 bg-[#8B5CF6]/10 px-3 py-2 text-xs font-semibold text-[#C4B5FD] transition hover:bg-[#8B5CF6]/20"
-        >
-          Reset View
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {[
+            ["translate", "Move"],
+            ["rotate", "Rotate"],
+            ["scale", "Scale"],
+          ].map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => changeMode(mode)}
+              className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                transformMode === mode
+                  ? "border-[#8B5CF6]/60 bg-[#8B5CF6]/20 text-[#DDD6FE]"
+                  : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => sceneApiRef.current?.resetView?.()}
+            className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[0.07]"
+          >
+            Reset View
+          </button>
+        </div>
       </div>
-      <div ref={mountRef} className="h-[620px] min-h-[420px] w-full" />
+
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_270px]">
+        <div ref={mountRef} className="h-[620px] min-h-[420px] w-full" />
+
+        <aside className="border-t border-white/10 bg-[#0A0D15] p-4 lg:border-l lg:border-t-0">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">Starter Cube</p>
+              <p className={`mt-1 text-xs ${selected ? "text-[#C4B5FD]" : "text-slate-500"}`}>
+                {selected ? "Selected" : "Click cube to select"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => sceneApiRef.current?.resetTransform?.()}
+              className="rounded-lg border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-2.5 py-2 text-[11px] font-semibold text-[#E7CA67]"
+            >
+              Reset
+            </button>
+          </div>
+
+          {[
+            ["position", "Position", "units"],
+            ["rotation", "Rotation", "degrees"],
+            ["scale", "Scale", "factor"],
+          ].map(([group, label, suffix]) => (
+            <fieldset key={group} className="mb-5">
+              <legend className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                {label} · {suffix}
+              </legend>
+              <div className="grid grid-cols-3 gap-2">
+                {["x", "y", "z"].map((axis) => (
+                  <label key={axis} className="block">
+                    <span className={`mb-1 block text-[10px] font-bold uppercase ${
+                      axis === "x" ? "text-red-400" : axis === "y" ? "text-green-400" : "text-blue-400"
+                    }`}>
+                      {axis}
+                    </span>
+                    <input
+                      type="number"
+                      step={group === "rotation" ? 1 : 0.1}
+                      min={group === "scale" ? 0.01 : undefined}
+                      value={transform[group][axis]}
+                      onChange={(event) => updateTransformValue(group, axis, event.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs text-white outline-none focus:border-[#8B5CF6]/60"
+                    />
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ))}
+
+          <p className="rounded-xl border border-white/5 bg-white/[0.025] p-3 text-xs leading-5 text-slate-500">
+            Drag the colored handles or enter exact values. Camera movement pauses automatically while transforming.
+          </p>
+        </aside>
+      </div>
+
       <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-white/10 px-5 py-3 text-xs text-slate-500">
         <span>Perspective camera</span>
-        <span>World grid</span>
-        <span>X/Y/Z axes</span>
+        <span>Transform gizmos</span>
+        <span>Numeric controls</span>
         <span>Starter cube</span>
       </div>
     </section>
