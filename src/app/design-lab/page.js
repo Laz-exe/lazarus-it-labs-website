@@ -35,6 +35,7 @@ import {
 
 import ProjectToolbar from "@/design-lab/components/ProjectToolbar";
 import SceneModeSwitch from "@/design-lab/components/SceneModeSwitch";
+import ThreeWorkspace from "@/design-lab/components/ThreeWorkspace";
 
 import {
   createDefaultDocument,
@@ -3193,7 +3194,10 @@ export default function DesignLab() {
               className="hidden"
             />
 
-            <div className="flex w-full justify-center overflow-auto rounded-[2rem] border border-white/5 bg-black/30 p-4 md:p-8">
+            {/* STEP 8E: THREE WORKSPACE */}
+            {sceneMode === "3d" && <ThreeWorkspace />}
+
+            <div className={`${sceneMode === "3d" ? "hidden" : "flex"} w-full justify-center overflow-auto rounded-[2rem] border border-white/5 bg-black/30 p-4 md:p-8`}>
               <div
                 ref={
                   stageRef
