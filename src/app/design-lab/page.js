@@ -36,6 +36,10 @@ import {
 import ProjectToolbar from "@/design-lab/components/ProjectToolbar";
 import SceneModeSwitch from "@/design-lab/components/SceneModeSwitch";
 import ThreeWorkspace from "@/design-lab/components/ThreeWorkspace";
+import {
+  ThreeInspector,
+  ThreeObjectsPositions,
+} from "@/design-lab/components/ThreeSidebar";
 
 import {
   createDefaultDocument,
@@ -480,6 +484,9 @@ export default function DesignLab() {
   const [scene3D, setScene3D] = useState(
     createDefaultThreeDScene,
   );
+
+  const [threeTransformMode, setThreeTransformMode] = useState("translate");
+  const [threePanelState, setThreePanelState] = useState({ positions: true, inspector: true });
 
   const [selectedId, setSelectedId] = useState("core");
   const [activeTool, setActiveTool] = useState("select");
@@ -3220,6 +3227,7 @@ export default function DesignLab() {
               <ThreeWorkspace
                 scene3D={scene3D}
                 onSceneChange={setScene3D}
+                transformMode={threeTransformMode}
               />
             )}
 
@@ -3694,7 +3702,32 @@ export default function DesignLab() {
                   </button>
                 </div>
 
-                {sidebarOrder.map(
+                {sceneMode === "3d" ? (
+                  <>
+                    <MovablePanel
+                      id="three-positions"
+                      title="Objects / Positions"
+                      expanded={threePanelState.positions}
+                      onToggle={() => setThreePanelState((current) => ({ ...current, positions: !current.positions }))}
+                      draggedId={null}
+                      setDraggedId={() => {}}
+                      reorder={() => {}}
+                    >
+                      <ThreeObjectsPositions scene3D={scene3D} onSceneChange={setScene3D} />
+                    </MovablePanel>
+                    <MovablePanel
+                      id="three-inspector"
+                      title="3D Inspector"
+                      expanded={threePanelState.inspector}
+                      onToggle={() => setThreePanelState((current) => ({ ...current, inspector: !current.inspector }))}
+                      draggedId={null}
+                      setDraggedId={() => {}}
+                      reorder={() => {}}
+                    >
+                      <ThreeInspector scene3D={scene3D} onSceneChange={setScene3D} transformMode={threeTransformMode} onTransformModeChange={setThreeTransformMode} />
+                    </MovablePanel>
+                  </>
+                ) : sidebarOrder.map(
                   (
                     sectionId,
                   ) => (

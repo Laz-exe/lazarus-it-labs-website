@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const AXES = ["x", "y", "z"];
 const INITIAL_CAMERA = [7, 5, 8];
 const TYPE_LABELS = {
   box: "Cube",
@@ -19,8 +18,6 @@ const DEFAULT_TRANSFORM = {
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const round = (value) => Math.round(value * 100) / 100;
-const toDegrees = (value) => round((value * 180) / Math.PI);
-const toRadians = (value) => (value * Math.PI) / 180;
 const makeId = () =>
   `3d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -30,38 +27,6 @@ const normalizeTransform = (transform = DEFAULT_TRANSFORM) => ({
   scale: { ...DEFAULT_TRANSFORM.scale, ...transform?.scale },
 });
 
-const controlValues = (transform) => {
-  const value = normalizeTransform(transform);
-  return {
-    position: { ...value.position },
-    rotation: {
-      x: toDegrees(value.rotation.x),
-      y: toDegrees(value.rotation.y),
-      z: toDegrees(value.rotation.z),
-    },
-    scale: { ...value.scale },
-  };
-};
-
-const linkedAxes = (links, changedAxis) => {
-  const found = new Set([changedAxis]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    links.forEach(([a, b]) => {
-      if (found.has(a) && !found.has(b)) {
-        found.add(b);
-        changed = true;
-      }
-      if (found.has(b) && !found.has(a)) {
-        found.add(a);
-        changed = true;
-      }
-    });
-  }
-  return found;
-};
-
 const geometryFor = (THREE, type) => {
   if (type === "sphere") return new THREE.SphereGeometry(1.15, 32, 20);
   if (type === "cylinder") return new THREE.CylinderGeometry(1, 1, 2, 32);
@@ -70,14 +35,12 @@ const geometryFor = (THREE, type) => {
   return new THREE.BoxGeometry(2, 2, 2);
 };
 
-export default function ThreeWorkspace({ scene3D, onSceneChange }) {
+export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode = "translate" }) {
   const mountRef = useRef(null);
   const apiRef = useRef(null);
   const sceneRef = useRef(scene3D);
   const onSceneChangeRef = useRef(onSceneChange);
-  const [mode, setMode] = useState("translate");
   const [ready, setReady] = useState(false);
-  const [links, setLinks] = useState({ position: [], rotation: [], scale: [] });
 
   useEffect(() => {
     sceneRef.current = scene3D;
@@ -93,11 +56,6 @@ export default function ThreeWorkspace({ scene3D, onSceneChange }) {
   }, [scene3D]);
   const selectedId = scene3D?.selectedObjectId ?? null;
   const selected = selectedId ? scene3D?.objects?.[selectedId] : null;
-  const controls = useMemo(
-    () => controlValues(selected?.transform3D),
-    [selected?.transform3D],
-  );
-
   const commit = useCallback((recipe) => {
     const current = sceneRef.current ?? { objects: {}, layerOrder: [] };
     const next = clone(current);
@@ -295,6 +253,24 @@ export default function ThreeWorkspace({ scene3D, onSceneChange }) {
         scene.add(mesh);
         meshes.set(id, mesh);
       }
+      const materialType = object.material?.type ?? "standard";
+      const expectedMaterial = materialType === "basic" ? "MeshBasicMaterial" : materialType === "phong" ? "MeshPhongMaterial" : "MeshStandardMaterial";
+      if (mesh.material.type !== expectedMaterial) {
+        mesh.material.dispose();
+        const common = { color: object.color ?? "#6d28d9", side: THREE.DoubleSide, transparent: true };
+        mesh.material = materialType === "basic"
+          ? new THREE.MeshBasicMaterial(common)
+          : materialType === "phong"
+            ? new THREE.MeshPhongMaterial({ ...common, shininess: object.material?.shininess ?? 60 })
+            : new THREE.MeshStandardMaterial(common);
+      }
+      mesh.material.color.set(object.color ?? "#6d28d9");
+      mesh.material.opacity = object.material?.opacity ?? 1;
+      if (mesh.material.isMeshStandardMaterial) {
+        mesh.material.metalness = object.material?.metalness ?? 0.48;
+        mesh.material.roughness = object.material?.roughness ?? 0.28;
+      }
+      if (mesh.material.isMeshPhongMaterial) mesh.material.shininess = object.material?.shininess ?? 60;
       const value = normalizeTransform(object.transform3D);
       mesh.name = object.name;
       mesh.visible = object.visible !== false;
@@ -305,9 +281,9 @@ export default function ThreeWorkspace({ scene3D, onSceneChange }) {
     const mesh = selectedId ? meshes.get(selectedId) : null;
     if (mesh && selected?.visible !== false && !selected?.locked) {
       transform.attach(mesh);
-      transform.setMode(mode);
+      transform.setMode(transformMode);
     } else transform.detach();
-  }, [mode, orderedIds, ready, scene3D, selected, selectedId]);
+  }, [orderedIds, ready, scene3D, selected, selectedId, transformMode]);
 
   const addObject = (type) => {
     const id = makeId();
@@ -321,70 +297,13 @@ export default function ThreeWorkspace({ scene3D, onSceneChange }) {
         name: `${TYPE_LABELS[type]} ${draft.layerOrder.length + 1}`,
         visible: true,
         locked: false,
+        color: "#6d28d9",
+        material: { type: "standard", metalness: 0.48, roughness: 0.28, opacity: 1, shininess: 60 },
         transform3D: clone(DEFAULT_TRANSFORM),
       };
       draft.layerOrder.push(id);
       draft.selectedObjectId = id;
     });
-  };
-
-  const patchObject = (id, patch) => commit((draft) => {
-    if (draft.objects?.[id]) Object.assign(draft.objects[id], patch);
-  });
-  const duplicate = () => {
-    if (!selected) return;
-    const id = makeId();
-    commit((draft) => {
-      const copy = clone(selected);
-      copy.id = id;
-      copy.name = `${selected.name} Copy`;
-      copy.transform3D.position.x += 0.5;
-      copy.transform3D.position.z += 0.5;
-      draft.objects[id] = copy;
-      draft.layerOrder.push(id);
-      draft.selectedObjectId = id;
-    });
-  };
-  const removeSelected = () => {
-    if (!selectedId) return;
-    commit((draft) => {
-      delete draft.objects[selectedId];
-      draft.layerOrder = draft.layerOrder.filter((id) => id !== selectedId);
-      draft.selectedObjectId = draft.layerOrder.at(-1) ?? null;
-    });
-  };
-
-  const toggleLink = (group, a, b) => setLinks((current) => {
-    const key = `${a}${b}`;
-    const exists = current[group].some(([x, y]) => `${x}${y}` === key);
-    return { ...current, [group]: exists ? current[group].filter(([x, y]) => `${x}${y}` !== key) : [...current[group], [a, b]] };
-  });
-
-  const updateValue = (group, axis, rawValue) => {
-    if (!selected || selected.locked) return;
-    const value = Number(rawValue);
-    if (!Number.isFinite(value)) return;
-    const previous = controls[group][axis];
-    const axes = linkedAxes(links[group], axis);
-    const nextControls = clone(controls);
-    axes.forEach((target) => {
-      if (group === "scale") {
-        const ratio = previous === 0 ? 1 : value / previous;
-        nextControls[group][target] = Math.max(target === axis ? value : controls[group][target] * ratio, 0.01);
-      } else {
-        nextControls[group][target] = controls[group][target] + (value - previous);
-      }
-    });
-    const nextTransform = normalizeTransform(selected.transform3D);
-    axes.forEach((target) => {
-      nextTransform[group][target] = group === "rotation" ? toRadians(nextControls[group][target]) : nextControls[group][target];
-    });
-    patchObject(selected.id, { transform3D: nextTransform });
-  };
-
-  const resetTransform = () => {
-    if (!selected || selected.locked) return;
-    patchObject(selected.id, { transform3D: clone(DEFAULT_TRANSFORM) });
   };
 
   return (
@@ -402,60 +321,7 @@ export default function ThreeWorkspace({ scene3D, onSceneChange }) {
         </div>
       </div>
 
-      <div className="grid min-h-[520px] lg:grid-cols-[1fr_250px]">
-        <div ref={mountRef} className="min-h-[520px]" />
-        <aside className="border-t border-white/10 bg-[#10131c] p-4 lg:border-l lg:border-t-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">3D Objects</p>
-          <div className="mt-3 max-h-40 space-y-1 overflow-auto">
-            {orderedIds.map((id) => {
-              const object = scene3D.objects[id];
-              return (
-                <div key={id} className={`flex items-center gap-1 rounded-lg border px-2 py-1 ${id === selectedId ? "border-amber-400/50 bg-amber-400/10" : "border-white/5"}`}>
-                  <button type="button" onClick={() => selectObject(id)} className="min-w-0 flex-1 truncate text-left text-xs text-slate-200">{object.name}</button>
-                  <button type="button" title={object.visible === false ? "Show" : "Hide"} onClick={() => patchObject(id, { visible: object.visible === false })} className="px-1 text-xs text-slate-400">{object.visible === false ? "○" : "●"}</button>
-                  <button type="button" title={object.locked ? "Unlock" : "Lock"} onClick={() => patchObject(id, { locked: !object.locked })} className="px-1 text-xs text-slate-400">{object.locked ? "L" : "U"}</button>
-                </div>
-              );
-            })}
-          </div>
-
-          {selected ? (
-            <div className="mt-4 border-t border-white/10 pt-4">
-              <input value={selected.name} disabled={selected.locked} onChange={(event) => patchObject(selected.id, { name: event.target.value })} className="w-full rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-sm text-white disabled:opacity-50" />
-              <div className="mt-3 flex gap-2">
-                {[['translate','Move'],['rotate','Rotate'],['scale','Scale']].map(([value, label]) => (
-                  <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-lg border px-2 py-1 text-xs ${mode === value ? "border-violet-400/60 bg-violet-500/20 text-violet-100" : "border-white/10 text-slate-400"}`}>{label}</button>
-                ))}
-                <button type="button" onClick={duplicate} className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-400">Copy</button>
-                <button type="button" onClick={removeSelected} className="rounded-lg border border-red-400/20 px-2 py-1 text-xs text-red-300">Delete</button>
-              </div>
-
-              {Object.entries({ position: "Position · Units", rotation: "Rotation · Degrees", scale: "Scale · Factor" }).map(([group, label]) => (
-                <div key={group} className="mt-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-                    <div className="flex gap-1" aria-label={`${group} axis links`}>
-                      {[['x','y'],['x','z'],['y','z']].map(([a, b]) => {
-                        const active = links[group].some(([x, y]) => x === a && y === b);
-                        return <button key={`${a}${b}`} type="button" title={`Link ${a.toUpperCase()} and ${b.toUpperCase()}`} aria-pressed={active} onClick={() => toggleLink(group, a, b)} className={`rounded border px-1.5 py-0.5 text-[9px] ${active ? "border-amber-400/60 bg-amber-400/15 text-amber-300" : "border-white/10 text-slate-500"}`}>{a.toUpperCase()}↔{b.toUpperCase()}</button>;
-                      })}
-                    </div>
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    {AXES.map((axis) => (
-                      <label key={axis} className="text-[10px] font-semibold uppercase text-slate-500">
-                        {axis}
-                        <input type="number" step="0.01" disabled={selected.locked} value={controls[group][axis]} onChange={(event) => updateValue(group, axis, event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-normal text-white disabled:opacity-50" />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <button type="button" disabled={selected.locked} onClick={resetTransform} className="mt-4 w-full rounded-lg border border-amber-400/25 px-2 py-1.5 text-xs text-amber-300 disabled:opacity-50">Reset Transform</button>
-            </div>
-          ) : <p className="mt-4 text-xs text-slate-500">Add or select a 3D object to edit it.</p>}
-        </aside>
-      </div>
+      <div ref={mountRef} className="min-h-[620px]" />
     </section>
   );
 }

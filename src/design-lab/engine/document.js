@@ -421,6 +421,14 @@ function migrateThreeDScene(scene3D) {
             name: object?.name ?? "3D Object",
             visible: object?.visible !== false,
             locked: object?.locked === true,
+            color: object?.color ?? "#6d28d9",
+            material: {
+              type: object?.material?.type ?? "standard",
+              metalness: object?.material?.metalness ?? 0.48,
+              roughness: object?.material?.roughness ?? 0.28,
+              opacity: object?.material?.opacity ?? 1,
+              shininess: object?.material?.shininess ?? 60,
+            },
             transform3D:
               createTransform3D(
                 object?.transform3D,

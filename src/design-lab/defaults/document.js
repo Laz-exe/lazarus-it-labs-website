@@ -378,6 +378,14 @@ export function createThreeDPrimitive({
     name,
     visible: true,
     locked: false,
+    color: "#6d28d9",
+    material: {
+      type: "standard",
+      metalness: 0.48,
+      roughness: 0.28,
+      opacity: 1,
+      shininess: 60,
+    },
     transform3D: createTransform3D(
       transform3D ?? { position: { x: 0, y: 1, z: 0 } },
     ),
