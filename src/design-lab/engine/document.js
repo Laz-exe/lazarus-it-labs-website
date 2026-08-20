@@ -416,6 +416,11 @@ function migrateThreeDScene(scene3D) {
           {
             ...object,
             id,
+            kind: object?.kind ?? "object",
+            type: object?.type ?? "box",
+            name: object?.name ?? "3D Object",
+            visible: object?.visible !== false,
+            locked: object?.locked === true,
             transform3D:
               createTransform3D(
                 object?.transform3D,

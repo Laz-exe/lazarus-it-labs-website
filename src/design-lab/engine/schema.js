@@ -30,6 +30,10 @@ export const ELEMENT_KINDS = Object.freeze({
 
 export const PRIMITIVE_3D_TYPES = Object.freeze({
   BOX: "box",
+  SPHERE: "sphere",
+  CYLINDER: "cylinder",
+  CONE: "cone",
+  PLANE: "plane",
 });
 
 export const ASSET_KINDS = Object.freeze({

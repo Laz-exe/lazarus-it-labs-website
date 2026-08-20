@@ -40,7 +40,6 @@ import ThreeWorkspace from "@/design-lab/components/ThreeWorkspace";
 import {
   createDefaultDocument,
   createDefaultThreeDScene,
-  STARTER_CUBE_ID,
 } from "@/design-lab/defaults/document";
 
 import {
@@ -2745,28 +2744,6 @@ export default function DesignLab() {
     );
   }
 
-  function updateStarterCubeTransform(
-    transform3D,
-  ) {
-    setScene3D(
-      (current) => ({
-        ...current,
-        objects: {
-          ...current.objects,
-          [STARTER_CUBE_ID]: {
-            ...current.objects[
-              STARTER_CUBE_ID
-            ],
-            transform3D:
-              structuredClone(
-                transform3D,
-              ),
-          },
-        },
-      }),
-    );
-  }
-
   function handleSaveProject() {
     downloadProjectFile(
       buildCurrentDocument(),
@@ -3241,14 +3218,8 @@ export default function DesignLab() {
             {/* STEP 8E: THREE WORKSPACE */}
             {sceneMode === "3d" && (
               <ThreeWorkspace
-                transform3D={
-                  scene3D.objects?.[
-                    STARTER_CUBE_ID
-                  ]?.transform3D
-                }
-                onTransformChange={
-                  updateStarterCubeTransform
-                }
+                scene3D={scene3D}
+                onSceneChange={setScene3D}
               />
             )}
 

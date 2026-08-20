@@ -1,287 +1,232 @@
 "use client";
 
-/* eslint-disable react-hooks/immutability -- Three.js scene objects use an imperative mutable API by design. */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-
+const AXES = ["x", "y", "z"];
 const INITIAL_CAMERA = [7, 5, 8];
-export const DEFAULT_STARTER_CUBE_TRANSFORM = {
+const TYPE_LABELS = {
+  box: "Cube",
+  sphere: "Sphere",
+  cylinder: "Cylinder",
+  cone: "Cone",
+  plane: "Plane",
+};
+const DEFAULT_TRANSFORM = {
   position: { x: 0, y: 1, z: 0 },
   rotation: { x: 0, y: 0, z: 0 },
   scale: { x: 1, y: 1, z: 1 },
 };
 
-const normalizeTransform = (transform = DEFAULT_STARTER_CUBE_TRANSFORM) => ({
-  position: {
-    ...DEFAULT_STARTER_CUBE_TRANSFORM.position,
-    ...transform?.position,
-  },
-  rotation: {
-    ...DEFAULT_STARTER_CUBE_TRANSFORM.rotation,
-    ...transform?.rotation,
-  },
-  scale: {
-    ...DEFAULT_STARTER_CUBE_TRANSFORM.scale,
-    ...transform?.scale,
-  },
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const round = (value) => Math.round(value * 100) / 100;
+const toDegrees = (value) => round((value * 180) / Math.PI);
+const toRadians = (value) => (value * Math.PI) / 180;
+const makeId = () =>
+  `3d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizeTransform = (transform = DEFAULT_TRANSFORM) => ({
+  position: { ...DEFAULT_TRANSFORM.position, ...transform?.position },
+  rotation: { ...DEFAULT_TRANSFORM.rotation, ...transform?.rotation },
+  scale: { ...DEFAULT_TRANSFORM.scale, ...transform?.scale },
 });
 
-const round = (value) => Math.round(value * 100) / 100;
-const radiansToDegrees = (value) => round((value * 180) / Math.PI);
-const degreesToRadians = (value) => (value * Math.PI) / 180;
-
-const createControlValues = (transform) => {
-  const normalized = normalizeTransform(transform);
-
+const controlValues = (transform) => {
+  const value = normalizeTransform(transform);
   return {
-    position: {
-      ...normalized.position,
-    },
+    position: { ...value.position },
     rotation: {
-      x: radiansToDegrees(normalized.rotation.x),
-      y: radiansToDegrees(normalized.rotation.y),
-      z: radiansToDegrees(normalized.rotation.z),
+      x: toDegrees(value.rotation.x),
+      y: toDegrees(value.rotation.y),
+      z: toDegrees(value.rotation.z),
     },
-    scale: {
-      ...normalized.scale,
-    },
+    scale: { ...value.scale },
   };
 };
 
-export default function ThreeWorkspace({
-  transform3D = DEFAULT_STARTER_CUBE_TRANSFORM,
-  onTransformChange,
-}) {
+const linkedAxes = (links, changedAxis) => {
+  const found = new Set([changedAxis]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    links.forEach(([a, b]) => {
+      if (found.has(a) && !found.has(b)) {
+        found.add(b);
+        changed = true;
+      }
+      if (found.has(b) && !found.has(a)) {
+        found.add(a);
+        changed = true;
+      }
+    });
+  }
+  return found;
+};
+
+const geometryFor = (THREE, type) => {
+  if (type === "sphere") return new THREE.SphereGeometry(1.15, 32, 20);
+  if (type === "cylinder") return new THREE.CylinderGeometry(1, 1, 2, 32);
+  if (type === "cone") return new THREE.ConeGeometry(1.1, 2.2, 32);
+  if (type === "plane") return new THREE.PlaneGeometry(2.4, 2.4);
+  return new THREE.BoxGeometry(2, 2, 2);
+};
+
+export default function ThreeWorkspace({ scene3D, onSceneChange }) {
   const mountRef = useRef(null);
-  const sceneApiRef = useRef(null);
-  const onTransformChangeRef = useRef(onTransformChange);
-  const documentTransformRef = useRef(normalizeTransform(transform3D));
-  const [selected, setSelected] = useState(false);
-  const [transformMode, setTransformMode] = useState("translate");
-  const [transform, setTransform] = useState(() =>
-    createControlValues(transform3D),
-  );
+  const apiRef = useRef(null);
+  const sceneRef = useRef(scene3D);
+  const onSceneChangeRef = useRef(onSceneChange);
+  const [mode, setMode] = useState("translate");
+  const [ready, setReady] = useState(false);
+  const [links, setLinks] = useState({ position: [], rotation: [], scale: [] });
 
   useEffect(() => {
-    onTransformChangeRef.current = onTransformChange;
-  }, [onTransformChange]);
+    sceneRef.current = scene3D;
+  }, [scene3D]);
+  useEffect(() => {
+    onSceneChangeRef.current = onSceneChange;
+  }, [onSceneChange]);
 
-  const syncTransformFromObject = useCallback((object) => {
-    if (!object) return;
-    const nextDocumentTransform = {
-      position: {
-        x: round(object.position.x),
-        y: round(object.position.y),
-        z: round(object.position.z),
-      },
-      rotation: {
-        x: object.rotation.x,
-        y: object.rotation.y,
-        z: object.rotation.z,
-      },
-      scale: {
-        x: round(object.scale.x),
-        y: round(object.scale.y),
-        z: round(object.scale.z),
-      },
-    };
+  const orderedIds = useMemo(() => {
+    const ids = scene3D?.layerOrder ?? [];
+    const objects = scene3D?.objects ?? {};
+    return [...ids.filter((id) => objects[id]), ...Object.keys(objects).filter((id) => !ids.includes(id))];
+  }, [scene3D]);
+  const selectedId = scene3D?.selectedObjectId ?? null;
+  const selected = selectedId ? scene3D?.objects?.[selectedId] : null;
+  const controls = useMemo(
+    () => controlValues(selected?.transform3D),
+    [selected?.transform3D],
+  );
 
-    documentTransformRef.current = nextDocumentTransform;
-    setTransform(createControlValues(nextDocumentTransform));
-    onTransformChangeRef.current?.(nextDocumentTransform);
+  const commit = useCallback((recipe) => {
+    const current = sceneRef.current ?? { objects: {}, layerOrder: [] };
+    const next = clone(current);
+    recipe(next);
+    sceneRef.current = next;
+    onSceneChangeRef.current?.(next);
   }, []);
+
+  const selectObject = useCallback((id) => {
+    commit((draft) => {
+      draft.selectedObjectId = draft.objects?.[id] ? id : null;
+    });
+  }, [commit]);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return undefined;
-
     let disposed = false;
     let frameId = 0;
-    let resizeObserver;
+    let observer;
     let renderer;
-    let orbitControls;
-    let transformControls;
+    let orbit;
+    let transform;
     let scene;
-    let cube;
 
     async function initialize() {
       const THREE = await import("three");
-      const { OrbitControls } = await import(
-        "three/addons/controls/OrbitControls.js"
-      );
-      const { TransformControls } = await import(
-        "three/addons/controls/TransformControls.js"
-      );
-
+      const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
+      const { TransformControls } = await import("three/addons/controls/TransformControls.js");
       if (disposed) return;
 
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x070a12);
       scene.fog = new THREE.Fog(0x070a12, 20, 42);
-
       const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
       camera.position.set(...INITIAL_CAMERA);
-
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
       renderer.domElement.className = "block h-full w-full";
       mount.appendChild(renderer.domElement);
 
-      orbitControls = new OrbitControls(camera, renderer.domElement);
-      orbitControls.enableDamping = true;
-      orbitControls.dampingFactor = 0.075;
-      orbitControls.target.set(0, 1, 0);
-      orbitControls.minDistance = 2.5;
-      orbitControls.maxDistance = 40;
-      orbitControls.maxPolarAngle = Math.PI * 0.495;
-      orbitControls.update();
+      orbit = new OrbitControls(camera, renderer.domElement);
+      orbit.enableDamping = true;
+      orbit.target.set(0, 1, 0);
+      orbit.minDistance = 2.5;
+      orbit.maxDistance = 40;
+      orbit.maxPolarAngle = Math.PI * 0.495;
 
       scene.add(new THREE.HemisphereLight(0xb9c9ff, 0x18101f, 1.7));
-
-      const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
-      keyLight.position.set(5, 9, 6);
-      keyLight.castShadow = true;
-      keyLight.shadow.mapSize.set(1024, 1024);
-      scene.add(keyLight);
-
-      const purpleLight = new THREE.PointLight(0x8b5cf6, 18, 18, 2);
-      purpleLight.position.set(-4, 4, 2);
-      scene.add(purpleLight);
-
-      const goldLight = new THREE.PointLight(0xd4af37, 12, 16, 2);
-      goldLight.position.set(4, 2.5, -3);
-      scene.add(goldLight);
+      const key = new THREE.DirectionalLight(0xffffff, 3.2);
+      key.position.set(5, 9, 6);
+      key.castShadow = true;
+      scene.add(key);
+      const purple = new THREE.PointLight(0x8b5cf6, 18, 18, 2);
+      purple.position.set(-4, 4, 2);
+      scene.add(purple);
+      const gold = new THREE.PointLight(0xd4af37, 12, 16, 2);
+      gold.position.set(4, 2.5, -3);
+      scene.add(gold);
 
       const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(40, 40),
-        new THREE.MeshStandardMaterial({
-          color: 0x0b0e17,
-          roughness: 0.92,
-          metalness: 0.08,
-        }),
+        new THREE.MeshStandardMaterial({ color: 0x0b0e17, roughness: 0.92, metalness: 0.08 }),
       );
       floor.rotation.x = -Math.PI / 2;
       floor.receiveShadow = true;
       scene.add(floor);
-
       const grid = new THREE.GridHelper(40, 40, 0xd4af37, 0x372454);
       grid.position.y = 0.002;
       grid.material.opacity = 0.42;
       grid.material.transparent = true;
       scene.add(grid);
-
       const axes = new THREE.AxesHelper(2.4);
       axes.position.set(-4.5, 0.02, 4.5);
       scene.add(axes);
 
-      cube = new THREE.Mesh(
-        new THREE.BoxGeometry(2, 2, 2),
-        new THREE.MeshStandardMaterial({
-          color: 0x6d28d9,
-          emissive: 0x210b42,
-          emissiveIntensity: 0.35,
-          metalness: 0.48,
-          roughness: 0.28,
-        }),
-      );
-      cube.name = "Starter Cube";
-      const initialTransform = documentTransformRef.current;
-      cube.position.set(
-        initialTransform.position.x,
-        initialTransform.position.y,
-        initialTransform.position.z,
-      );
-      cube.rotation.set(
-        initialTransform.rotation.x,
-        initialTransform.rotation.y,
-        initialTransform.rotation.z,
-      );
-      cube.scale.set(
-        initialTransform.scale.x,
-        initialTransform.scale.y,
-        initialTransform.scale.z,
-      );
-      cube.castShadow = true;
-      cube.receiveShadow = true;
-      scene.add(cube);
-
-      const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(cube.geometry),
-        new THREE.LineBasicMaterial({ color: 0xd8c7ff }),
-      );
-      cube.add(edges);
-
-      transformControls = new TransformControls(camera, renderer.domElement);
-      transformControls.setMode("translate");
-      transformControls.setSize(0.8);
-      scene.add(transformControls.getHelper());
-
-      transformControls.addEventListener("dragging-changed", (event) => {
-        orbitControls.enabled = !event.value;
+      transform = new TransformControls(camera, renderer.domElement);
+      transform.setSize(0.8);
+      scene.add(transform.getHelper());
+      transform.addEventListener("dragging-changed", (event) => {
+        orbit.enabled = !event.value;
       });
-      transformControls.addEventListener("objectChange", () => {
-        syncTransformFromObject(cube);
+      transform.addEventListener("objectChange", () => {
+        const object = transform.object;
+        const id = object?.userData?.objectId;
+        if (!id) return;
+        const nextTransform = {
+          position: { x: round(object.position.x), y: round(object.position.y), z: round(object.position.z) },
+          rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+          scale: { x: round(object.scale.x), y: round(object.scale.y), z: round(object.scale.z) },
+        };
+        commit((draft) => {
+          if (draft.objects?.[id]) draft.objects[id].transform3D = nextTransform;
+        });
       });
 
       const raycaster = new THREE.Raycaster();
       const pointer = new THREE.Vector2();
       const handleSelection = (event) => {
-        if (transformControls.dragging) return;
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
-        const hitCube = raycaster.intersectObject(cube, true).length > 0;
-        if (hitCube) {
-          transformControls.attach(cube);
-          setSelected(true);
-          syncTransformFromObject(cube);
-        }
+        const meshes = [...apiRef.current.meshes.values()].filter((mesh) => mesh.visible);
+        const hit = raycaster.intersectObjects(meshes, false)[0]?.object;
+        if (hit?.userData?.objectId) selectObject(hit.userData.objectId);
       };
       renderer.domElement.addEventListener("pointerdown", handleSelection);
 
-      const resetView = () => {
-        camera.position.set(...INITIAL_CAMERA);
-        orbitControls.target.set(0, 1, 0);
-        orbitControls.update();
-      };
-
-      const resetTransform = () => {
-        const reset = DEFAULT_STARTER_CUBE_TRANSFORM;
-        cube.position.set(
-          reset.position.x,
-          reset.position.y,
-          reset.position.z,
-        );
-        cube.rotation.set(
-          reset.rotation.x,
-          reset.rotation.y,
-          reset.rotation.z,
-        );
-        cube.scale.set(
-          reset.scale.x,
-          reset.scale.y,
-          reset.scale.z,
-        );
-        syncTransformFromObject(cube);
-      };
-
-      sceneApiRef.current = {
-        cube,
-        transformControls,
-        resetView,
-        resetTransform,
-        select: () => {
-          transformControls.attach(cube);
-          setSelected(true);
-          syncTransformFromObject(cube);
+      apiRef.current = {
+        THREE,
+        scene,
+        camera,
+        orbit,
+        transform,
+        meshes: new Map(),
+        resetView() {
+          camera.position.set(...INITIAL_CAMERA);
+          orbit.target.set(0, 1, 0);
+          orbit.update();
+        },
+        cleanup() {
+          renderer.domElement.removeEventListener("pointerdown", handleSelection);
         },
       };
+      setReady(true);
 
       const resize = () => {
         const width = Math.max(mount.clientWidth, 1);
@@ -290,194 +235,226 @@ export default function ThreeWorkspace({
         camera.updateProjectionMatrix();
         renderer.setSize(width, height, false);
       };
-      resizeObserver = new ResizeObserver(resize);
-      resizeObserver.observe(mount);
+      observer = new ResizeObserver(resize);
+      observer.observe(mount);
       resize();
-
       const render = () => {
         if (disposed) return;
-        orbitControls.update();
+        orbit.update();
         renderer.render(scene, camera);
         frameId = window.requestAnimationFrame(render);
       };
       render();
-
-      sceneApiRef.current.cleanupSelection = () => {
-        renderer.domElement.removeEventListener("pointerdown", handleSelection);
-      };
     }
-
-    initialize().catch((error) => {
-      console.error("Unable to initialize the Design Lab 3D workspace", error);
-    });
-
+    initialize().catch((error) => console.error("Unable to initialize the Design Lab 3D workspace", error));
     return () => {
       disposed = true;
       window.cancelAnimationFrame(frameId);
-      resizeObserver?.disconnect();
-      sceneApiRef.current?.cleanupSelection?.();
-      transformControls?.detach();
-      transformControls?.dispose();
-      orbitControls?.dispose();
+      observer?.disconnect();
+      apiRef.current?.cleanup?.();
+      transform?.detach();
+      transform?.dispose();
+      orbit?.dispose();
       scene?.traverse((object) => {
         object.geometry?.dispose?.();
-        if (Array.isArray(object.material)) {
-          object.material.forEach((material) => material.dispose?.());
-        } else {
-          object.material?.dispose?.();
-        }
+        if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose?.());
+        else object.material?.dispose?.();
       });
       renderer?.dispose();
       renderer?.domElement?.remove();
-      sceneApiRef.current = null;
+      apiRef.current = null;
     };
-  }, [syncTransformFromObject]);
+  }, [commit, selectObject]);
 
   useEffect(() => {
-    const normalized = normalizeTransform(transform3D);
-    documentTransformRef.current = normalized;
-    // An opened or reset document is an external source of truth for these controls.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTransform(createControlValues(normalized));
+    const api = apiRef.current;
+    if (!api || !ready) return;
+    const { THREE, scene, meshes, transform } = api;
+    const objects = scene3D?.objects ?? {};
+    for (const [id, mesh] of meshes) {
+      if (!objects[id] || objects[id].type !== mesh.userData.type) {
+        if (transform.object === mesh) transform.detach();
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+        meshes.delete(id);
+      }
+    }
+    orderedIds.forEach((id) => {
+      const object = objects[id];
+      if (!object) return;
+      let mesh = meshes.get(id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(
+          geometryFor(THREE, object.type),
+          new THREE.MeshStandardMaterial({ color: 0x6d28d9, emissive: 0x210b42, emissiveIntensity: 0.35, metalness: 0.48, roughness: 0.28, side: THREE.DoubleSide }),
+        );
+        mesh.userData = { objectId: id, type: object.type };
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        meshes.set(id, mesh);
+      }
+      const value = normalizeTransform(object.transform3D);
+      mesh.name = object.name;
+      mesh.visible = object.visible !== false;
+      mesh.position.set(value.position.x, value.position.y, value.position.z);
+      mesh.rotation.set(value.rotation.x, value.rotation.y, value.rotation.z);
+      mesh.scale.set(value.scale.x, value.scale.y, value.scale.z);
+    });
+    const mesh = selectedId ? meshes.get(selectedId) : null;
+    if (mesh && selected?.visible !== false && !selected?.locked) {
+      transform.attach(mesh);
+      transform.setMode(mode);
+    } else transform.detach();
+  }, [mode, orderedIds, ready, scene3D, selected, selectedId]);
 
-    const cube = sceneApiRef.current?.cube;
-    if (!cube) return;
-
-    cube.position.set(
-      normalized.position.x,
-      normalized.position.y,
-      normalized.position.z,
-    );
-    cube.rotation.set(
-      normalized.rotation.x,
-      normalized.rotation.y,
-      normalized.rotation.z,
-    );
-    cube.scale.set(
-      normalized.scale.x,
-      normalized.scale.y,
-      normalized.scale.z,
-    );
-  }, [transform3D]);
-
-  const changeMode = (mode) => {
-    setTransformMode(mode);
-    sceneApiRef.current?.transformControls?.setMode(mode);
-    sceneApiRef.current?.select?.();
+  const addObject = (type) => {
+    const id = makeId();
+    commit((draft) => {
+      draft.objects ??= {};
+      draft.layerOrder ??= [];
+      draft.objects[id] = {
+        id,
+        kind: "object",
+        type,
+        name: `${TYPE_LABELS[type]} ${draft.layerOrder.length + 1}`,
+        visible: true,
+        locked: false,
+        transform3D: clone(DEFAULT_TRANSFORM),
+      };
+      draft.layerOrder.push(id);
+      draft.selectedObjectId = id;
+    });
   };
 
-  const updateTransformValue = (group, axis, rawValue) => {
+  const patchObject = (id, patch) => commit((draft) => {
+    if (draft.objects?.[id]) Object.assign(draft.objects[id], patch);
+  });
+  const duplicate = () => {
+    if (!selected) return;
+    const id = makeId();
+    commit((draft) => {
+      const copy = clone(selected);
+      copy.id = id;
+      copy.name = `${selected.name} Copy`;
+      copy.transform3D.position.x += 0.5;
+      copy.transform3D.position.z += 0.5;
+      draft.objects[id] = copy;
+      draft.layerOrder.push(id);
+      draft.selectedObjectId = id;
+    });
+  };
+  const removeSelected = () => {
+    if (!selectedId) return;
+    commit((draft) => {
+      delete draft.objects[selectedId];
+      draft.layerOrder = draft.layerOrder.filter((id) => id !== selectedId);
+      draft.selectedObjectId = draft.layerOrder.at(-1) ?? null;
+    });
+  };
+
+  const toggleLink = (group, a, b) => setLinks((current) => {
+    const key = `${a}${b}`;
+    const exists = current[group].some(([x, y]) => `${x}${y}` === key);
+    return { ...current, [group]: exists ? current[group].filter(([x, y]) => `${x}${y}` !== key) : [...current[group], [a, b]] };
+  });
+
+  const updateValue = (group, axis, rawValue) => {
+    if (!selected || selected.locked) return;
     const value = Number(rawValue);
     if (!Number.isFinite(value)) return;
-    const cube = sceneApiRef.current?.cube;
-    if (!cube) return;
+    const previous = controls[group][axis];
+    const axes = linkedAxes(links[group], axis);
+    const nextControls = clone(controls);
+    axes.forEach((target) => {
+      if (group === "scale") {
+        const ratio = previous === 0 ? 1 : value / previous;
+        nextControls[group][target] = Math.max(target === axis ? value : controls[group][target] * ratio, 0.01);
+      } else {
+        nextControls[group][target] = controls[group][target] + (value - previous);
+      }
+    });
+    const nextTransform = normalizeTransform(selected.transform3D);
+    axes.forEach((target) => {
+      nextTransform[group][target] = group === "rotation" ? toRadians(nextControls[group][target]) : nextControls[group][target];
+    });
+    patchObject(selected.id, { transform3D: nextTransform });
+  };
 
-    if (group === "position") cube.position[axis] = value;
-    if (group === "rotation") cube.rotation[axis] = degreesToRadians(value);
-    if (group === "scale") cube.scale[axis] = Math.max(value, 0.01);
-    syncTransformFromObject(cube);
+  const resetTransform = () => {
+    if (!selected || selected.locked) return;
+    patchObject(selected.id, { transform3D: clone(DEFAULT_TRANSFORM) });
   };
 
   return (
-    <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#070A12] shadow-2xl shadow-black/60">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.025] px-5 py-3">
+    <section className="overflow-hidden rounded-[26px] border border-white/10 bg-[#0b0e16]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-white">3D Workspace</p>
-          <p className="mt-0.5 text-xs text-slate-400">
-            Click the cube to select · Left drag: orbit · Wheel: zoom · Right drag: pan
-          </p>
+          <p className="text-[11px] text-slate-500">Select an object · Left drag: orbit · Wheel: zoom · Right drag: pan</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {[
-            ["translate", "Move"],
-            ["rotate", "Rotate"],
-            ["scale", "Scale"],
-          ].map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => changeMode(mode)}
-              className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                transformMode === mode
-                  ? "border-[#8B5CF6]/60 bg-[#8B5CF6]/20 text-[#DDD6FE]"
-                  : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]"
-              }`}
-            >
-              {label}
-            </button>
+          {Object.entries(TYPE_LABELS).map(([type, label]) => (
+            <button key={type} type="button" onClick={() => addObject(type)} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-slate-300 hover:border-violet-400/60">+ {label}</button>
           ))}
-          <button
-            type="button"
-            onClick={() => sceneApiRef.current?.resetView?.()}
-            className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/[0.07]"
-          >
-            Reset View
-          </button>
+          <button type="button" onClick={() => apiRef.current?.resetView()} className="rounded-lg border border-violet-400/30 px-2.5 py-1.5 text-xs text-violet-200">Reset View</button>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_270px]">
-        <div ref={mountRef} className="h-[620px] min-h-[420px] w-full" />
-
-        <aside className="border-t border-white/10 bg-[#0A0D15] p-4 lg:border-l lg:border-t-0">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">Starter Cube</p>
-              <p className={`mt-1 text-xs ${selected ? "text-[#C4B5FD]" : "text-slate-500"}`}>
-                {selected ? "Selected" : "Click cube to select"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => sceneApiRef.current?.resetTransform?.()}
-              className="rounded-lg border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-2.5 py-2 text-[11px] font-semibold text-[#E7CA67]"
-            >
-              Reset
-            </button>
+      <div className="grid min-h-[520px] lg:grid-cols-[1fr_250px]">
+        <div ref={mountRef} className="min-h-[520px]" />
+        <aside className="border-t border-white/10 bg-[#10131c] p-4 lg:border-l lg:border-t-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">3D Objects</p>
+          <div className="mt-3 max-h-40 space-y-1 overflow-auto">
+            {orderedIds.map((id) => {
+              const object = scene3D.objects[id];
+              return (
+                <div key={id} className={`flex items-center gap-1 rounded-lg border px-2 py-1 ${id === selectedId ? "border-amber-400/50 bg-amber-400/10" : "border-white/5"}`}>
+                  <button type="button" onClick={() => selectObject(id)} className="min-w-0 flex-1 truncate text-left text-xs text-slate-200">{object.name}</button>
+                  <button type="button" title={object.visible === false ? "Show" : "Hide"} onClick={() => patchObject(id, { visible: object.visible === false })} className="px-1 text-xs text-slate-400">{object.visible === false ? "○" : "●"}</button>
+                  <button type="button" title={object.locked ? "Unlock" : "Lock"} onClick={() => patchObject(id, { locked: !object.locked })} className="px-1 text-xs text-slate-400">{object.locked ? "L" : "U"}</button>
+                </div>
+              );
+            })}
           </div>
 
-          {[
-            ["position", "Position", "units"],
-            ["rotation", "Rotation", "degrees"],
-            ["scale", "Scale", "factor"],
-          ].map(([group, label, suffix]) => (
-            <fieldset key={group} className="mb-5">
-              <legend className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                {label} · {suffix}
-              </legend>
-              <div className="grid grid-cols-3 gap-2">
-                {["x", "y", "z"].map((axis) => (
-                  <label key={axis} className="block">
-                    <span className={`mb-1 block text-[10px] font-bold uppercase ${
-                      axis === "x" ? "text-red-400" : axis === "y" ? "text-green-400" : "text-blue-400"
-                    }`}>
-                      {axis}
-                    </span>
-                    <input
-                      type="number"
-                      step={group === "rotation" ? 1 : 0.1}
-                      min={group === "scale" ? 0.01 : undefined}
-                      value={transform[group][axis]}
-                      onChange={(event) => updateTransformValue(group, axis, event.target.value)}
-                      className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs text-white outline-none focus:border-[#8B5CF6]/60"
-                    />
-                  </label>
+          {selected ? (
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <input value={selected.name} disabled={selected.locked} onChange={(event) => patchObject(selected.id, { name: event.target.value })} className="w-full rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-sm text-white disabled:opacity-50" />
+              <div className="mt-3 flex gap-2">
+                {[['translate','Move'],['rotate','Rotate'],['scale','Scale']].map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-lg border px-2 py-1 text-xs ${mode === value ? "border-violet-400/60 bg-violet-500/20 text-violet-100" : "border-white/10 text-slate-400"}`}>{label}</button>
                 ))}
+                <button type="button" onClick={duplicate} className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-400">Copy</button>
+                <button type="button" onClick={removeSelected} className="rounded-lg border border-red-400/20 px-2 py-1 text-xs text-red-300">Delete</button>
               </div>
-            </fieldset>
-          ))}
 
-          <p className="rounded-xl border border-white/5 bg-white/[0.025] p-3 text-xs leading-5 text-slate-500">
-            Drag the colored handles or enter exact values. Camera movement pauses automatically while transforming.
-          </p>
+              {Object.entries({ position: "Position · Units", rotation: "Rotation · Degrees", scale: "Scale · Factor" }).map(([group, label]) => (
+                <div key={group} className="mt-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
+                    <div className="flex gap-1" aria-label={`${group} axis links`}>
+                      {[['x','y'],['x','z'],['y','z']].map(([a, b]) => {
+                        const active = links[group].some(([x, y]) => x === a && y === b);
+                        return <button key={`${a}${b}`} type="button" title={`Link ${a.toUpperCase()} and ${b.toUpperCase()}`} aria-pressed={active} onClick={() => toggleLink(group, a, b)} className={`rounded border px-1.5 py-0.5 text-[9px] ${active ? "border-amber-400/60 bg-amber-400/15 text-amber-300" : "border-white/10 text-slate-500"}`}>{a.toUpperCase()}↔{b.toUpperCase()}</button>;
+                      })}
+                    </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {AXES.map((axis) => (
+                      <label key={axis} className="text-[10px] font-semibold uppercase text-slate-500">
+                        {axis}
+                        <input type="number" step="0.01" disabled={selected.locked} value={controls[group][axis]} onChange={(event) => updateValue(group, axis, event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-normal text-white disabled:opacity-50" />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <button type="button" disabled={selected.locked} onClick={resetTransform} className="mt-4 w-full rounded-lg border border-amber-400/25 px-2 py-1.5 text-xs text-amber-300 disabled:opacity-50">Reset Transform</button>
+            </div>
+          ) : <p className="mt-4 text-xs text-slate-500">Add or select a 3D object to edit it.</p>}
         </aside>
-      </div>
-
-      <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-white/10 px-5 py-3 text-xs text-slate-500">
-        <span>Perspective camera</span>
-        <span>Transform gizmos</span>
-        <span>Numeric controls</span>
-        <span>Starter cube</span>
       </div>
     </section>
   );

@@ -365,24 +365,33 @@ export const defaultCanvas = {
 
 export const STARTER_CUBE_ID = "starter-cube";
 
+export function createThreeDPrimitive({
+  id,
+  type = PRIMITIVE_3D_TYPES.BOX,
+  name = "3D Object",
+  transform3D,
+} = {}) {
+  return {
+    id,
+    kind: ELEMENT_KINDS.OBJECT,
+    type,
+    name,
+    visible: true,
+    locked: false,
+    transform3D: createTransform3D(
+      transform3D ?? { position: { x: 0, y: 1, z: 0 } },
+    ),
+  };
+}
+
 export function createDefaultThreeDScene() {
   return {
     objects: {
-      [STARTER_CUBE_ID]: {
+      [STARTER_CUBE_ID]: createThreeDPrimitive({
         id: STARTER_CUBE_ID,
-        kind: ELEMENT_KINDS.OBJECT,
         type: PRIMITIVE_3D_TYPES.BOX,
         name: "Starter Cube",
-        visible: true,
-        locked: false,
-        transform3D: createTransform3D({
-          position: {
-            x: 0,
-            y: 1,
-            z: 0,
-          },
-        }),
-      },
+      }),
     },
     layerOrder: [STARTER_CUBE_ID],
     selectedObjectId: STARTER_CUBE_ID,
