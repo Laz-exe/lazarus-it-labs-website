@@ -35,11 +35,12 @@ const geometryFor = (THREE, type) => {
   return new THREE.BoxGeometry(2, 2, 2);
 };
 
-export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode = "translate" }) {
+export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode = "translate", viewAction, onZoomChange }) {
   const mountRef = useRef(null);
   const apiRef = useRef(null);
   const sceneRef = useRef(scene3D);
   const onSceneChangeRef = useRef(onSceneChange);
+  const onZoomChangeRef = useRef(onZoomChange);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -48,6 +49,9 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
   useEffect(() => {
     onSceneChangeRef.current = onSceneChange;
   }, [onSceneChange]);
+  useEffect(() => {
+    onZoomChangeRef.current = onZoomChange;
+  }, [onZoomChange]);
 
   const orderedIds = useMemo(() => {
     const ids = scene3D?.layerOrder ?? [];
@@ -106,6 +110,12 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
       orbit.minDistance = 2.5;
       orbit.maxDistance = 40;
       orbit.maxPolarAngle = Math.PI * 0.495;
+      const initialDistance = new THREE.Vector3(...INITIAL_CAMERA).distanceTo(orbit.target);
+      const reportZoom = () => {
+        const distance = Math.max(camera.position.distanceTo(orbit.target), 0.01);
+        onZoomChangeRef.current?.(Math.round((initialDistance / distance) * 100));
+      };
+      orbit.addEventListener("change", reportZoom);
 
       scene.add(new THREE.HemisphereLight(0xb9c9ff, 0x18101f, 1.7));
       const key = new THREE.DirectionalLight(0xffffff, 3.2);
@@ -179,11 +189,28 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
           camera.position.set(...INITIAL_CAMERA);
           orbit.target.set(0, 1, 0);
           orbit.update();
+          reportZoom();
+        },
+        fit(objectIds) {
+          const targets = objectIds.map((id) => this.meshes.get(id)).filter((mesh) => mesh?.visible);
+          if (!targets.length) return;
+          const box = new THREE.Box3();
+          targets.forEach((mesh) => box.expandByObject(mesh));
+          const center = box.getCenter(new THREE.Vector3());
+          const size = box.getSize(new THREE.Vector3());
+          const radius = Math.max(size.length() * 0.62, 1.2);
+          const direction = camera.position.clone().sub(orbit.target).normalize();
+          orbit.target.copy(center);
+          camera.position.copy(center).add(direction.multiplyScalar(radius * 2.4));
+          orbit.update();
+          reportZoom();
         },
         cleanup() {
           renderer.domElement.removeEventListener("pointerdown", handleSelection);
+          orbit.removeEventListener("change", reportZoom);
         },
       };
+      reportZoom();
       setReady(true);
 
       const resize = () => {
@@ -285,6 +312,13 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
     } else transform.detach();
   }, [orderedIds, ready, scene3D, selected, selectedId, transformMode]);
 
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api || !ready || !viewAction) return;
+    if (viewAction.type === "all") api.fit(orderedIds);
+    if (viewAction.type === "selection" && selectedId) api.fit([selectedId]);
+  }, [orderedIds, ready, selectedId, viewAction]);
+
   const addObject = (type) => {
     const id = makeId();
     commit((draft) => {
@@ -307,7 +341,7 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
   };
 
   return (
-    <section className="overflow-hidden rounded-[26px] border border-white/10 bg-[#0b0e16]">
+    <section className="flex h-full flex-col overflow-hidden rounded-[26px] border border-white/10 bg-[#0b0e16]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-white">3D Workspace</p>
@@ -321,7 +355,7 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
         </div>
       </div>
 
-      <div ref={mountRef} className="min-h-[620px]" />
+      <div ref={mountRef} className="min-h-0 flex-1" />
     </section>
   );
 }

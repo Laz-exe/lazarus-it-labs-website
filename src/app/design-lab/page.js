@@ -36,6 +36,7 @@ import {
 import ProjectToolbar from "@/design-lab/components/ProjectToolbar";
 import SceneModeSwitch from "@/design-lab/components/SceneModeSwitch";
 import ThreeWorkspace from "@/design-lab/components/ThreeWorkspace";
+import WorkspaceLayoutShell from "@/design-lab/components/WorkspaceLayoutShell";
 import {
   ThreeInspector,
   ThreeObjectsPositions,
@@ -451,6 +452,7 @@ export default function DesignLab() {
     useState("Untitled Lazarus Project");
 
   const stageRef = useRef(null);
+  const workspaceViewportRef = useRef(null);
 
   const fileInputRef = useRef(null);
   const backgroundInputRef = useRef(null);
@@ -487,6 +489,9 @@ export default function DesignLab() {
 
   const [threeTransformMode, setThreeTransformMode] = useState("translate");
   const [threePanelState, setThreePanelState] = useState({ positions: true, inspector: true });
+  const [threeZoom, setThreeZoom] = useState(100);
+  const [threeViewAction, setThreeViewAction] = useState(null);
+  const [twoDZoom, setTwoDZoom] = useState(100);
 
   const [selectedId, setSelectedId] = useState("core");
   const [activeTool, setActiveTool] = useState("select");
@@ -3029,6 +3034,47 @@ export default function DesignLab() {
       "Guides",
   };
 
+  const requestThreeView = (type) => {
+    setThreeViewAction({ type, nonce: Date.now() });
+  };
+
+  const fitTwoDAll = () => {
+    const viewport = workspaceViewportRef.current;
+    if (!viewport) return;
+    const availableWidth = Math.max(viewport.clientWidth - 64, 1);
+    const availableHeight = Math.max(viewport.clientHeight - 64, 1);
+    setTwoDZoom(Math.max(10, Math.min(400, (Math.min(availableWidth / canvas.width, availableHeight / canvas.height) * 100))));
+    requestAnimationFrame(() => viewport.scrollTo({ left: 0, top: 0, behavior: "smooth" }));
+  };
+
+  const fitTwoDSelection = () => {
+    const viewport = workspaceViewportRef.current;
+    if (!viewport || (!selectedObject && !selectedLine)) return fitTwoDAll();
+    let widthPercent = 20;
+    let heightPercent = 20;
+    let centerX = 50;
+    let centerY = 50;
+    if (selectedObject) {
+      centerX = selectedObject.x ?? 50;
+      centerY = selectedObject.y ?? 50;
+      const base = selectedObject.type === "core" ? 52 : selectedObject.type === "image" ? 28 : 12;
+      widthPercent = Math.max(base * (selectedObject.scale ?? 1), 4);
+      heightPercent = widthPercent;
+    } else if (selectedLine) {
+      centerX = ((selectedLine.x1 ?? 0) + (selectedLine.x2 ?? 100)) / 2;
+      centerY = ((selectedLine.y1 ?? 0) + (selectedLine.y2 ?? 100)) / 2;
+      widthPercent = Math.max(Math.abs((selectedLine.x2 ?? 100) - (selectedLine.x1 ?? 0)), 5);
+      heightPercent = Math.max(Math.abs((selectedLine.y2 ?? 100) - (selectedLine.y1 ?? 0)), 5);
+    }
+    const target = Math.max(25, Math.min(400, Math.min((viewport.clientWidth * 0.72) / (canvas.width * widthPercent / 100), (viewport.clientHeight * 0.72) / (canvas.height * heightPercent / 100)) * 100));
+    setTwoDZoom(target);
+    requestAnimationFrame(() => {
+      const scaledWidth = canvas.width * target / 100;
+      const scaledHeight = canvas.height * target / 100;
+      viewport.scrollTo({ left: Math.max(0, scaledWidth * centerX / 100 - viewport.clientWidth / 2), top: Math.max(0, scaledHeight * centerY / 100 - viewport.clientHeight / 2), behavior: "smooth" });
+    });
+  };
+
   return (
     <main className="min-h-screen bg-[#05070D] px-5 py-8 text-white md:px-8">
       <section className="mx-auto max-w-[1750px]">
@@ -3161,16 +3207,14 @@ export default function DesignLab() {
           }
         />
 
-        <div
-          className={`grid gap-8 ${
-            showSidebar &&
-            editorMode ===
-              "edit"
-              ? "xl:grid-cols-[minmax(0,1fr)_470px]"
-              : "grid-cols-1"
-          }`}
-        >
-          <div className="min-w-0">
+        <WorkspaceLayoutShell
+          key={sceneMode}
+          mode={sceneMode}
+          zoom={sceneMode === "3d" ? threeZoom : twoDZoom}
+          onFitAll={sceneMode === "3d" ? () => requestThreeView("all") : fitTwoDAll}
+          onFitSelection={sceneMode === "3d" ? () => requestThreeView("selection") : fitTwoDSelection}
+          renderWorkspace={() => (
+          <div className="flex h-full min-w-0 flex-col">
             {editorMode ===
               "edit" && (
               <Toolbar
@@ -3224,14 +3268,18 @@ export default function DesignLab() {
 
             {/* STEP 8E: THREE WORKSPACE */}
             {sceneMode === "3d" && (
-              <ThreeWorkspace
-                scene3D={scene3D}
-                onSceneChange={setScene3D}
-                transformMode={threeTransformMode}
-              />
+              <div className="min-h-0 flex-1">
+                <ThreeWorkspace
+                  scene3D={scene3D}
+                  onSceneChange={setScene3D}
+                  transformMode={threeTransformMode}
+                  viewAction={threeViewAction}
+                  onZoomChange={setThreeZoom}
+                />
+              </div>
             )}
 
-            <div className={`${sceneMode === "3d" ? "hidden" : "flex"} w-full justify-center overflow-auto rounded-[2rem] border border-white/5 bg-black/30 p-4 md:p-8`}>
+            <div ref={workspaceViewportRef} className={`${sceneMode === "3d" ? "hidden" : "flex"} min-h-0 flex-1 w-full justify-center overflow-auto rounded-[2rem] border border-white/5 bg-black/30 p-4 md:p-8`}>
               <div
                 ref={
                   stageRef
@@ -3269,8 +3317,14 @@ export default function DesignLab() {
                     : "cursor-default"
                 }`}
                 style={{
+                  width:
+                    `${canvas.width * (twoDZoom / 100)}px`,
+
                   maxWidth:
-                    `${canvas.width}px`,
+                    "none",
+
+                  flex:
+                    "0 0 auto",
 
                   aspectRatio:
                     `${canvas.width} / ${canvas.height}`,
@@ -3675,8 +3729,8 @@ export default function DesignLab() {
               </div>
             </div>
           </div>
-
-          {showSidebar &&
+          )}
+          sidebar={showSidebar &&
             editorMode ===
               "edit" && (
               <aside className="space-y-4">
@@ -3771,7 +3825,7 @@ export default function DesignLab() {
                 )}
               </aside>
             )}
-        </div>
+        />
       </section>
     </main>
   );
