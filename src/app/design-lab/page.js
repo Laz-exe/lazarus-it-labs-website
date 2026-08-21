@@ -23,10 +23,12 @@ import {
   Pencil,
   Play,
   RotateCcw,
+  Redo2,
   ShieldCheck,
   Smartphone,
   Tablet,
   Trash2,
+  Undo2,
   Unlink,
   Unlock,
   Maximize2,
@@ -37,6 +39,7 @@ import ProjectToolbar from "@/design-lab/components/ProjectToolbar";
 import SceneModeSwitch from "@/design-lab/components/SceneModeSwitch";
 import ThreeWorkspace from "@/design-lab/components/ThreeWorkspace";
 import WorkspaceLayoutShell from "@/design-lab/components/WorkspaceLayoutShell";
+import { createHistoryController } from "@/design-lab/history/history";
 import {
   ThreeInspector,
   ThreeObjectsPositions,
@@ -521,6 +524,99 @@ export default function DesignLab() {
 
   const [editorMode, setEditorMode] = useState("edit");
 
+  const historyRef = useRef(createHistoryController(80));
+  const [historyState, setHistoryState] = useState({
+    canUndo: false,
+    canRedo: false,
+  });
+
+  function syncHistoryState() {
+    setHistoryState({
+      canUndo: historyRef.current.canUndo(),
+      canRedo: historyRef.current.canRedo(),
+    });
+  }
+
+  function captureHistorySnapshot() {
+    return {
+      objects: structuredClone(objects),
+      lines: structuredClone(lines),
+      layerOrder: [...layerOrder],
+      canvas: structuredClone(canvas),
+      geometry: structuredClone(geometry),
+      scene3D: structuredClone(scene3D),
+    };
+  }
+
+  function restoreHistorySnapshot(snapshot) {
+    if (!snapshot) return;
+    setObjects(structuredClone(snapshot.objects));
+    setLines(structuredClone(snapshot.lines));
+    setLayerOrder([...snapshot.layerOrder]);
+    setCanvas(structuredClone(snapshot.canvas));
+    setGeometry(structuredClone(snapshot.geometry));
+    setScene3D(structuredClone(snapshot.scene3D));
+    setSelectedId(null);
+    clearSnap();
+  }
+
+  function checkpointHistory() {
+    if (historyRef.current.checkpoint(captureHistorySnapshot())) {
+      syncHistoryState();
+    }
+  }
+
+  function beginHistoryTransaction() {
+    historyRef.current.begin(captureHistorySnapshot());
+  }
+
+  function commitHistoryTransaction() {
+    if (historyRef.current.commit()) {
+      syncHistoryState();
+    }
+  }
+
+  function undoHistory() {
+    const snapshot = historyRef.current.undo(captureHistorySnapshot());
+    if (!snapshot) return;
+    restoreHistorySnapshot(snapshot);
+    syncHistoryState();
+  }
+
+  function redoHistory() {
+    const snapshot = historyRef.current.redo(captureHistorySnapshot());
+    if (!snapshot) return;
+    restoreHistorySnapshot(snapshot);
+    syncHistoryState();
+  }
+
+  function applyScene3DChange(nextScene, options = {}) {
+    if (options.history !== false && !historyRef.current.inTransaction()) {
+      checkpointHistory();
+    }
+    setScene3D(nextScene);
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const target = event.target;
+      const isTyping =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable;
+
+      if (isTyping) return;
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
+
+      event.preventDefault();
+      if (event.shiftKey) redoHistory();
+      else undoHistory();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
+
   useEffect(() => {
     if (!stageRef.current) return;
 
@@ -720,6 +816,7 @@ export default function DesignLab() {
     event.stopPropagation();
 
     setSelectedId(id);
+    beginHistoryTransaction();
 
     interactionRef.current = {
       type: "object-move",
@@ -759,6 +856,8 @@ export default function DesignLab() {
         (object.y / 100) *
           rect.height,
     };
+
+    beginHistoryTransaction();
 
     interactionRef.current = {
       type: "object-scale",
@@ -810,6 +909,8 @@ export default function DesignLab() {
       (object.y / 100) *
         rect.height;
 
+    beginHistoryTransaction();
+
     interactionRef.current = {
       type: "object-rotate",
 
@@ -858,6 +959,8 @@ export default function DesignLab() {
     const pointer =
       pointFromPointer(event);
 
+    beginHistoryTransaction();
+
     interactionRef.current = {
       type: "line-move",
 
@@ -892,6 +995,7 @@ export default function DesignLab() {
     event.stopPropagation();
 
     setSelectedId(id);
+    beginHistoryTransaction();
 
     interactionRef.current = {
       type:
@@ -1483,6 +1587,7 @@ export default function DesignLab() {
         "line-create" &&
       linePreview
     ) {
+      checkpointHistory();
       const length =
         distanceBetween(
           linePreview.x1,
@@ -1569,6 +1674,10 @@ export default function DesignLab() {
           "select",
         );
       }
+    }
+
+    if (interaction && interaction.type !== "line-create") {
+      commitHistoryTransaction();
     }
 
     interactionRef.current =
@@ -2452,6 +2561,7 @@ export default function DesignLab() {
      ======================================================= */
 
   function resetDocument() {
+    checkpointHistory();
     setAssets({});
 
     setObjects(
@@ -2745,6 +2855,8 @@ export default function DesignLab() {
     );
 
     clearSnap();
+    historyRef.current.clear();
+    syncHistoryState();
   }
 
   function handleNewProject() {
@@ -3099,6 +3211,26 @@ export default function DesignLab() {
 
           <div className="flex flex-wrap gap-3">
             <button
+              type="button"
+              onClick={undoHistory}
+              disabled={!historyState.canUndo}
+              title="Undo (⌘/Ctrl+Z)"
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <Undo2 className="h-4 w-4" />
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={redoHistory}
+              disabled={!historyState.canRedo}
+              title="Redo (⌘/Ctrl+Shift+Z)"
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <Redo2 className="h-4 w-4" />
+              Redo
+            </button>
+            <button
               onClick={() =>
                 setEditorMode(
                   editorMode ===
@@ -3271,7 +3403,9 @@ export default function DesignLab() {
               <div className="min-h-0 flex-1">
                 <ThreeWorkspace
                   scene3D={scene3D}
-                  onSceneChange={setScene3D}
+                  onSceneChange={applyScene3DChange}
+                  onTransformStart={beginHistoryTransaction}
+                  onTransformEnd={commitHistoryTransaction}
                   transformMode={threeTransformMode}
                   viewAction={threeViewAction}
                   onZoomChange={setThreeZoom}
@@ -3767,7 +3901,7 @@ export default function DesignLab() {
                       setDraggedId={() => {}}
                       reorder={() => {}}
                     >
-                      <ThreeObjectsPositions scene3D={scene3D} onSceneChange={setScene3D} />
+                      <ThreeObjectsPositions scene3D={scene3D} onSceneChange={applyScene3DChange} />
                     </MovablePanel>
                     <MovablePanel
                       id="three-inspector"
@@ -3778,7 +3912,7 @@ export default function DesignLab() {
                       setDraggedId={() => {}}
                       reorder={() => {}}
                     >
-                      <ThreeInspector scene3D={scene3D} onSceneChange={setScene3D} transformMode={threeTransformMode} onTransformModeChange={setThreeTransformMode} />
+                      <ThreeInspector scene3D={scene3D} onSceneChange={applyScene3DChange} transformMode={threeTransformMode} onTransformModeChange={setThreeTransformMode} />
                     </MovablePanel>
                   </>
                 ) : sidebarOrder.map(

@@ -35,11 +35,13 @@ const geometryFor = (THREE, type) => {
   return new THREE.BoxGeometry(2, 2, 2);
 };
 
-export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode = "translate", viewAction, onZoomChange }) {
+export default function ThreeWorkspace({ scene3D, onSceneChange, onTransformStart, onTransformEnd, transformMode = "translate", viewAction, onZoomChange }) {
   const mountRef = useRef(null);
   const apiRef = useRef(null);
   const sceneRef = useRef(scene3D);
   const onSceneChangeRef = useRef(onSceneChange);
+  const onTransformStartRef = useRef(onTransformStart);
+  const onTransformEndRef = useRef(onTransformEnd);
   const onZoomChangeRef = useRef(onZoomChange);
   const [ready, setReady] = useState(false);
 
@@ -49,6 +51,10 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
   useEffect(() => {
     onSceneChangeRef.current = onSceneChange;
   }, [onSceneChange]);
+  useEffect(() => {
+    onTransformStartRef.current = onTransformStart;
+    onTransformEndRef.current = onTransformEnd;
+  }, [onTransformStart, onTransformEnd]);
   useEffect(() => {
     onZoomChangeRef.current = onZoomChange;
   }, [onZoomChange]);
@@ -65,14 +71,16 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
     const next = clone(current);
     recipe(next);
     sceneRef.current = next;
-    onSceneChangeRef.current?.(next);
+    onSceneChangeRef.current?.(next, { history: true });
   }, []);
 
   const selectObject = useCallback((id) => {
-    commit((draft) => {
-      draft.selectedObjectId = draft.objects?.[id] ? id : null;
-    });
-  }, [commit]);
+    const current = sceneRef.current ?? { objects: {}, layerOrder: [] };
+    const next = clone(current);
+    next.selectedObjectId = next.objects?.[id] ? id : null;
+    sceneRef.current = next;
+    onSceneChangeRef.current?.(next, { history: false });
+  }, []);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -150,6 +158,8 @@ export default function ThreeWorkspace({ scene3D, onSceneChange, transformMode =
       scene.add(transform.getHelper());
       transform.addEventListener("dragging-changed", (event) => {
         orbit.enabled = !event.value;
+        if (event.value) onTransformStartRef.current?.();
+        else onTransformEndRef.current?.();
       });
       transform.addEventListener("objectChange", () => {
         const object = transform.object;
